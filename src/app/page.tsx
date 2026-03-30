@@ -16,7 +16,7 @@ type Task = {
 };
 
 // --- AUTH PAGE SUB-COMPONENT ---
-function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
+function AuthPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -27,17 +27,27 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
     setLoading(true);
     setErrorMsg('');
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setErrorMsg(error.message);
-    else onAuthSuccess();
-    setLoading(false);
+    if (error) {
+      setErrorMsg(error.message);
+      setLoading(false);
+    }
+    // If successful, onAuthStateChange in the parent organically boots the User away!
   };
 
   const handleSignup = async () => {
+    if (!email || password.length < 6) {
+       setErrorMsg('Email is required and Password must be at least 6 characters.');
+       return;
+    }
     setLoading(true);
     setErrorMsg('');
     const { error } = await supabase.auth.signUp({ email, password });
-    if (error) setErrorMsg(error.message);
-    else alert("Success! Check your email to verify your account or directly login if auto-confirm is enabled.");
+    if (error) {
+      setErrorMsg(error.message);
+    } else {
+      alert("Success! Check your email to verify your account or directly login if auto-confirm is enabled.");
+      // Optional: Supabase natively logs them in if Email Confirmations are disabled on the Dashboard.
+    }
     setLoading(false);
   };
 
@@ -357,7 +367,7 @@ export default function Home() {
   }
 
   if (!user) {
-    return <AuthPage onAuthSuccess={() => fetchState()} />;
+    return <AuthPage />;
   }
 
   if (loading && tasks.length === 0 && !activeSession) {
