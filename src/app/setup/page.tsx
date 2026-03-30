@@ -35,42 +35,18 @@ export default function SetupGuide() {
           {/* Step 1 */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 md:p-8">
             <div className="text-brand-neon font-bold tracking-widest text-sm uppercase mb-2">Step 1</div>
-            <h2 className="text-2xl font-black mb-3">Install the App</h2>
+            <h2 className="text-2xl font-black mb-3">Add to Home Screen</h2>
             <p className="text-neutral-400">
-              Ya Machur is designed as a native web application. Open this page in <strong>Safari</strong> on your iPhone, tap the <strong>Share</strong> icon at the bottom, and select <strong className="text-white">"Add to Home Screen"</strong>. This enables background persistence and the true native app experience.
+              Use the Safari <strong>Share</strong> icon to <strong className="text-white">"Add to Home Screen"</strong> for the full native app experience.
             </p>
           </div>
 
           {/* Step 2 */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 md:p-8">
             <div className="text-brand-neon font-bold tracking-widest text-sm uppercase mb-2">Step 2</div>
-            <h2 className="text-2xl font-black mb-4">Download the "Enforcer" Shortcut</h2>
-            <p className="text-neutral-400 mb-8">
-              The core of the system relies on an Apple Shortcut that aggressively intercepts when you try to open restricted apps. Download and add it to your iCloud.
-            </p>
-            <a href="#" className="inline-flex items-center justify-center font-black text-lg md:text-xl px-8 py-5 rounded-xl transition-all overflow-hidden bg-brand-neon text-black hover:bg-green-400 hover:scale-105 active:scale-95 shadow-[0_0_30px_rgba(57,255,20,0.2)] hover:shadow-[0_0_50px_rgba(57,255,20,0.4)] relative group w-full md:w-auto text-center border-2 border-transparent">
-              <span className="relative z-10 transition-transform group-hover:scale-105 duration-300 tracking-wide">
-                Download Apple Shortcut
-              </span>
-              <div className="absolute inset-0 h-full w-full bg-white/20 scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300"></div>
-            </a>
-          </div>
-
-          {/* Step 3 */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 md:p-8">
-            <div className="text-brand-neon font-bold tracking-widest text-sm uppercase mb-2">Step 3</div>
-            <h2 className="text-2xl font-black mb-3">Select Your Addictions</h2>
-            <p className="text-neutral-400">
-              When installing the Shortcut on your device, it will prompt you. Select the exact apps you want to block (e.g., <strong className="text-brand-crimson font-bold">Instagram, TikTok, Twitter</strong>). Any app selected here will be immediately locked down whenever a Pomodoro session is active.
-            </p>
-          </div>
-
-          {/* Step 4 */}
-          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 md:p-8">
-            <div className="text-brand-neon font-bold tracking-widest text-sm uppercase mb-2">Step 4</div>
-            <h2 className="text-2xl font-black mb-3">Connect Your API</h2>
+            <h2 className="text-2xl font-black mb-3">Copy Your Personal Key</h2>
             <p className="text-neutral-400 mb-6">
-              Paste your unique tracking URL into the Shortcut configuration so your phone knows exactly when your timer hits zero.
+              Copy this now, you will need it when installing the shortcut in Step 3.
             </p>
             <div className="flex flex-col md:flex-row gap-3">
               <input 
@@ -87,9 +63,39 @@ export default function SetupGuide() {
                   : 'bg-neutral-800 text-white hover:bg-neutral-700'
                 }`}
               >
-                {copied ? 'Copied!' : 'Copy to Clipboard'}
+                {copied ? 'Copied!' : 'Copy My Key'}
               </button>
             </div>
+          </div>
+
+          {/* Step 3 */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 md:p-8">
+            <div className="text-brand-neon font-bold tracking-widest text-sm uppercase mb-2">Step 3</div>
+            <h2 className="text-2xl font-black mb-4">Install the "Enforcer" Shortcut</h2>
+            <p className="text-neutral-400 mb-8">
+              When prompted during installation, paste the URL you copied in Step 2 into the configuration field.
+            </p>
+            <a href="https://www.icloud.com/shortcuts/a018964c714645ff92f3b77777a351b0" target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center font-black text-lg md:text-xl px-8 py-5 rounded-xl transition-all overflow-hidden bg-brand-neon text-black hover:bg-green-400 hover:scale-105 active:scale-95 shadow-[0_0_30px_rgba(57,255,20,0.2)] hover:shadow-[0_0_50px_rgba(57,255,20,0.4)] relative group w-full md:w-auto text-center border-2 border-transparent">
+              <span className="relative z-10 transition-transform group-hover:scale-105 duration-300 tracking-wide">
+                Download Shortcut
+              </span>
+              <div className="absolute inset-0 h-full w-full bg-white/20 scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-300"></div>
+            </a>
+          </div>
+
+          {/* Step 4 */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 md:p-8">
+            <div className="text-brand-neon font-bold tracking-widest text-sm uppercase mb-2">Step 4</div>
+            <h2 className="text-2xl font-black mb-3">Activate Ninja Mode (Automation)</h2>
+            <p className="text-neutral-400 mb-4">
+              Open the Apple Shortcuts app, go to the <strong>Automation</strong> tab, and tap <strong>New Automation -&gt; "App"</strong>.
+            </p>
+            <ul className="list-disc pl-5 space-y-2 text-neutral-400">
+              <li>Select your addictive apps (Instagram, TikTok, etc.).</li>
+              <li>Set to <strong className="text-white">"Run Immediately"</strong> (crucial for instant blocking).</li>
+              <li>Toggle <strong className="text-white">OFF</strong> "Notify When Run" (to keep it silent).</li>
+              <li>Action: Select "Run Shortcut" -&gt; "Ya Machur".</li>
+            </ul>
           </div>
         </div>
       </div>
