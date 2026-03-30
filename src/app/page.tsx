@@ -44,7 +44,7 @@ function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
   return (
     <main className="flex min-h-screen items-center justify-center p-6 bg-bg-deep text-white transition-all duration-1000">
       <div className="w-full max-w-sm flex flex-col items-center">
-        <Image src="/logo.png" alt="Ya Machur" width={80} height={80} className="mb-6 rounded-2xl shadow-[0_0_20px_rgba(255,255,255,0.1)]" />
+        <Image src="/logo.png" priority alt="Ya Machur" width={80} height={80} className="mb-6 rounded-2xl shadow-[0_0_20px_rgba(255,255,255,0.1)]" />
         <h1 className="text-3xl font-black tracking-tight mb-2">Ya Machur</h1>
         <p className="text-brand-neon font-bold text-sm uppercase tracking-widest opacity-80 mb-8">Login to Focus</p>
         
@@ -381,7 +381,7 @@ export default function Home() {
         <div className="w-full max-w-3xl transform scale-100 opacity-100 transition-all">
           <div className="mb-10 text-center flex flex-col items-center">
             <div className="flex items-center gap-4 mb-3">
-              <Image src="/logo.png" alt="Ya Machur Logo" width={64} height={64} className="rounded-2xl shadow-[0_0_15px_rgba(255,255,255,0.1)] pointer-events-none" />
+              <Image src="/logo.png" priority alt="Ya Machur Logo" width={64} height={64} className="rounded-2xl shadow-[0_0_15px_rgba(255,255,255,0.1)] pointer-events-none" />
               <h1 className="text-4xl md:text-5xl font-black tracking-tight opacity-90">Ya Machur</h1>
             </div>
             <div className="flex items-center justify-center gap-3">

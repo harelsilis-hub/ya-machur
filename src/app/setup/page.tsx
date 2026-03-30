@@ -1,11 +1,20 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
 
 export default function SetupGuide() {
   const [copied, setCopied] = useState(false);
-  const apiUrl = 'https://ya-machur.vercel.app/api/status?user=YOUR_NAME';
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUserId(session?.user?.id ?? null);
+    });
+  }, []);
+
+  const apiUrl = `https://ya-machur.vercel.app/api/status?userId=${userId || 'YOUR_ACCOUNT_ID'}`;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(apiUrl);
