@@ -1,0 +1,17 @@
+{
+  "name": "Ya Machur",
+  "short_name": "Ya Machur",
+  "description": "Minimalist Focus Enforcer",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {
+      "src": "/pwa-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

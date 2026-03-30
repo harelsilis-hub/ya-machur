@@ -1,0 +1,12 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-neon: #39ff14;
+  --color-brand-crimson: #ff073a;
+  --color-bg-deep: #050505;
+}
+
+body {
+  background-color: var(--color-bg-deep);
+  color: #ffffff;
+}
