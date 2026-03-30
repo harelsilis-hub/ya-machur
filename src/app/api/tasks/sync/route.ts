@@ -5,14 +5,22 @@ export async function POST(request: Request) {
   try {
     const { userId, taskTitles } = await request.json();
 
-    // Apple Shortcuts BUG FIX: If there is only ONE reminder, Shortcuts sends it as a raw string instead of an Array!
-    let parsedTitles = taskTitles;
-    if (typeof taskTitles === 'string') {
-      parsedTitles = [taskTitles];
+    // Apple Shortcuts BUG FIX: Shortcuts notoriously concatenates lists into a single giant string with newlines when injecting into JSON!
+    let parsedTitles: string[] = [];
+    
+    if (Array.isArray(taskTitles)) {
+      parsedTitles = taskTitles;
+    } else if (typeof taskTitles === 'string') {
+      // Split the giant string by newlines to recover the individual list items!
+      parsedTitles = taskTitles.split('\n').map((t: string) => t.trim()).filter((t: string) => t.length > 0);
+      // Apple sometimes uses commas too depending on region, but \n is default.
+      if (parsedTitles.length === 1 && parsedTitles[0].includes(',')) {
+         parsedTitles = parsedTitles[0].split(',').map((t: string) => t.trim()).filter((t: string) => t.length > 0);
+      }
     }
 
-    if (!userId || !Array.isArray(parsedTitles)) {
-      return NextResponse.json({ error: 'Invalid payload. Requires userId string and taskTitles array (or single string).' }, { status: 400 });
+    if (!userId || parsedTitles.length === 0) {
+      return NextResponse.json({ error: 'Invalid payload or empty list provided.' }, { status: 400 });
     }
 
     // 1. Clear existing tasks for the user strictly (destructive sync as requested)
@@ -45,7 +53,7 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, message: `Successfully wiped old list and synced ${taskTitles.length} new tasks.` });
+    return NextResponse.json({ success: true, message: `Successfully wiped old list and synced ${parsedTitles.length} new tasks.` });
 
   } catch (err: any) {
     console.error('Sync API Error:', err);
