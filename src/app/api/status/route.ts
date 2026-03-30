@@ -3,11 +3,18 @@ import { supabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const userId = searchParams.get('userId');
+
+  if (!userId) {
+    return NextResponse.json({ isActive: false, error: 'Authorization: Missing userId query' }, { status: 400 });
+  }
+
   const { data: settings } = await supabase
     .from('settings')
     .select('is_active, session_phase, session_end_time')
-    .eq('id', 1)
+    .eq('user_id', userId)
     .single();
 
   if (!settings) {

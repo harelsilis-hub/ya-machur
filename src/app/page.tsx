@@ -15,6 +15,57 @@ type Task = {
   position?: number;
 };
 
+// --- AUTH PAGE SUB-COMPONENT ---
+function AuthPage({ onAuthSuccess }: { onAuthSuccess: () => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMsg('');
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setErrorMsg(error.message);
+    else onAuthSuccess();
+    setLoading(false);
+  };
+
+  const handleSignup = async () => {
+    setLoading(true);
+    setErrorMsg('');
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) setErrorMsg(error.message);
+    else alert("Success! Check your email to verify your account or directly login if auto-confirm is enabled.");
+    setLoading(false);
+  };
+
+  return (
+    <main className="flex min-h-screen items-center justify-center p-6 bg-bg-deep text-white transition-all duration-1000">
+      <div className="w-full max-w-sm flex flex-col items-center">
+        <Image src="/logo.png" alt="Ya Machur" width={80} height={80} className="mb-6 rounded-2xl shadow-[0_0_20px_rgba(255,255,255,0.1)]" />
+        <h1 className="text-3xl font-black tracking-tight mb-2">Ya Machur</h1>
+        <p className="text-brand-neon font-bold text-sm uppercase tracking-widest opacity-80 mb-8">Login to Focus</p>
+        
+        {errorMsg && <div className="bg-red-500/10 border border-red-500 text-red-500 p-3 rounded-xl mb-6 text-sm w-full text-center">{errorMsg}</div>}
+
+        <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
+          <input type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-neutral-900 border-2 border-neutral-800 focus:border-neutral-600 rounded-xl px-4 py-3 outline-none" />
+          <input type="password" placeholder="Password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-neutral-900 border-2 border-neutral-800 focus:border-neutral-600 rounded-xl px-4 py-3 outline-none" />
+          
+          <button type="submit" disabled={loading} className="w-full bg-white text-black font-bold py-3 mt-2 rounded-xl hover:scale-[1.02] transition-transform">
+            {loading ? 'Processing...' : 'Login'}
+          </button>
+        </form>
+        <button type="button" onClick={handleSignup} disabled={loading} className="mt-4 text-neutral-500 hover:text-white font-bold text-sm uppercase tracking-widest transition-colors tracking-widest">
+          Create Account
+        </button>
+      </div>
+    </main>
+  );
+}
+
 // Sortable Component Wrapper for Tasks
 function SortableTaskItem({ task, action }: { task: Task; action: any }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
@@ -67,6 +118,9 @@ type AppState = {
 };
 
 export default function Home() {
+  const [user, setUser] = useState<any>(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  
   const [tasks, setTasks] = useState<Task[]>([]);
   const [activeSession, setActiveSession] = useState<ActiveSession | null>(null);
   const [inputText, setInputText] = useState('');
@@ -75,10 +129,23 @@ export default function Home() {
   // Custom timer logic for frontend
   const [now, setNow] = useState(Date.now());
 
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      setAuthChecking(false);
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   const fetchState = async () => {
+    if (!user) return;
     try {
       // 1. Fetch backend settings state for active session tracking
-      const res = await fetch('/api/task');
+      const res = await fetch(`/api/task?userId=${user.id}`);
       if (res.ok) {
         const data = await res.json();
         setActiveSession(data.activeSession);
@@ -88,9 +155,9 @@ export default function Home() {
       const { data: latestTasks, error } = await supabase
         .from('tasks')
         .select('*')
+        .eq('user_id', user.id)
         .order('position', { ascending: true }) // First ordering by custom drag-drop array
         .order('created_at', { ascending: true }); // Appends naturally backwards for logical chronologics
-
         
       if (!error && latestTasks) {
         setTasks(latestTasks);
@@ -103,11 +170,13 @@ export default function Home() {
   };
 
   useEffect(() => {
-    fetchState();
-    // Poll the backend settings frequently to detect break transitions accurately
-    const interval = setInterval(fetchState, 1000);
-    return () => clearInterval(interval);
-  }, []);
+    if (user) {
+      fetchState();
+      // Poll the backend settings frequently to detect break transitions accurately
+      const interval = setInterval(fetchState, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   const stateRef = useRef({ tasks, activeSession });
   useEffect(() => {
@@ -123,12 +192,12 @@ export default function Home() {
       setNow(currentNow);
       
       const session = stateRef.current?.activeSession;
-      if (session?.endTime && currentNow >= session.endTime && !transitioningRef.current) {
+      if (session?.endTime && currentNow >= session.endTime && !transitioningRef.current && user) {
         transitioningRef.current = true;
         fetch('/api/task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'transition_timer' }),
+          body: JSON.stringify({ action: 'transition_timer', userId: user.id }),
         }).then(res => res.json()).then(data => {
           setActiveSession(data.activeSession);
         }).finally(() => {
@@ -137,7 +206,7 @@ export default function Home() {
       }
     }, 1000);
     return () => clearInterval(timerInterval);
-  }, []);
+  }, [user]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -145,6 +214,7 @@ export default function Home() {
   );
 
   const handleDragEnd = async (event: DragEndEvent) => {
+    if (!user) return;
     const { active, over } = event;
     if (over && active.id !== over.id) {
       const oldIndex = tasks.findIndex(t => t.id === active.id);
@@ -157,7 +227,7 @@ export default function Home() {
       setTasks(updatedTasks);
       
       // Silent Deep DB shift Upsert
-      const payload = updatedTasks.map(t => ({ id: t.id, position: t.position, name: t.name, completed: t.completed, created_at: undefined }));
+      const payload = updatedTasks.map(t => ({ id: t.id, user_id: user.id, position: t.position, name: t.name, completed: t.completed }));
       const { error } = await supabase.from('tasks').upsert(payload, { onConflict: 'id' });
       if (error) console.error("Reorder Failed:", error);
     }
@@ -192,6 +262,7 @@ export default function Home() {
   }, [activeSession?.phase]);
 
   const action = async (payload: { action: string, taskId?: string, mode?: string }) => {
+    if (!user) return;
     setLoading(true);
     try {
       // Backend handling for Sessions
@@ -199,7 +270,7 @@ export default function Home() {
         await fetch('/api/task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({ ...payload, userId: user.id }),
         });
       }
 
@@ -209,7 +280,7 @@ export default function Home() {
         if (target) {
           // Optimistic UI update
           setTasks(prev => prev.map(t => t.id === payload.taskId ? { ...t, completed: !t.completed } : t));
-          const { error } = await supabase.from('tasks').update({ completed: !target.completed }).eq('id', payload.taskId);
+          const { error } = await supabase.from('tasks').update({ completed: !target.completed }).eq('id', payload.taskId).eq('user_id', user.id);
           if (error) {
              console.error("TOGGLE ERORR:", error);
              alert(`Database Update Failed: ${error.message || 'Check if "completed" column exists!'}`);
@@ -217,7 +288,7 @@ export default function Home() {
         }
       } else if (payload.action === 'delete_task' && payload.taskId) {
         setTasks(prev => prev.filter(t => t.id !== payload.taskId)); // Optimistic delete
-        const { error } = await supabase.from('tasks').delete().eq('id', payload.taskId);
+        const { error } = await supabase.from('tasks').delete().eq('id', payload.taskId).eq('user_id', user.id);
         if (error) {
              console.error("DELETE ERORR:", error);
              alert(`Database Delete Failed: ${error.message}`);
@@ -235,7 +306,7 @@ export default function Home() {
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim()) return;
+    if (!inputText.trim() || !user) return;
     
     const newTaskName = inputText.trim();
     setInputText('');
@@ -247,13 +318,13 @@ export default function Home() {
     // Direct Database Insert
     const { data: newTasks, error } = await supabase
       .from('tasks')
-      .insert([{ name: newTaskName, position: nextPosition }])
+      .insert([{ name: newTaskName, position: nextPosition, user_id: user.id }])
       .select();
       
     if (error) {
       console.error("FAILED TO INSERT TASK.");
-      console.dir(error); // Logs the true un-serialized fetch/network crash object
-      alert(`Supabase Database blocked the insert: ${error.message || 'Check if "position" column exists in DB!'}`);
+      console.dir(error);
+      alert(`Supabase Database blocked the insert: ${error.message || 'Check if "user_id" column exists in DB!'}`);
     }
     if (!error && newTasks && newTasks.length > 0) {
       // Immediate UI update, append to BOTTOM!
@@ -273,13 +344,26 @@ export default function Home() {
     return `${m}:${s}`;
   };
 
-  // Unpack state variables smoothly
-  // We no longer rely on state object wrapper
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
+  if (authChecking) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-bg-deep text-white">
+        <div className="animate-pulse opacity-50 font-medium tracking-widest uppercase">Connecting to Cloud...</div>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return <AuthPage onAuthSuccess={() => fetchState()} />;
+  }
 
   if (loading && tasks.length === 0 && !activeSession) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-bg-deep text-white">
-        <div className="animate-pulse opacity-50 font-medium tracking-widest uppercase">Initializing...</div>
+        <div className="animate-pulse opacity-50 font-medium tracking-widest uppercase">Initializing Vault...</div>
       </main>
     );
   }
@@ -303,8 +387,11 @@ export default function Home() {
             <div className="flex items-center justify-center gap-3">
               <p className="text-brand-neon font-bold text-sm uppercase tracking-widest opacity-80">Dashboard &bull; Free to Scroll</p>
               <Link href="/setup" className="bg-neutral-800 text-white hover:bg-white hover:text-black px-3 py-1 rounded-md text-xs font-bold uppercase transition-colors tracking-widest">
-                Setup Guide
+                Setup
               </Link>
+              <button onClick={handleLogout} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white px-3 py-1 rounded-md text-xs font-bold uppercase transition-colors tracking-widest">
+                Logout
+              </button>
             </div>
           </div>
           
