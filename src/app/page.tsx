@@ -17,36 +17,37 @@ type Task = {
 
 // --- AUTH PAGE SUB-COMPONENT ---
 function AuthPage() {
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setErrorMsg('');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setErrorMsg(error.message);
-      setLoading(false);
-    }
-    // If successful, onAuthStateChange in the parent organically boots the User away!
-  };
-
-  const handleSignup = async () => {
-    if (!email || password.length < 6) {
+    if (mode === 'signup' && (!email || password.length < 6)) {
        setErrorMsg('Email is required and Password must be at least 6 characters.');
        return;
     }
+    if (mode === 'signup' && password !== confirmPassword) {
+       setErrorMsg('Passwords do not match.');
+       return;
+    }
+    
     setLoading(true);
     setErrorMsg('');
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) {
-      setErrorMsg(error.message);
+    
+    if (mode === 'login') {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) setErrorMsg(error.message);
     } else {
-      alert("Success! Check your email to verify your account or directly login if auto-confirm is enabled.");
-      // Optional: Supabase natively logs them in if Email Confirmations are disabled on the Dashboard.
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) setErrorMsg(error.message);
+      else {
+        alert("Success! Check your email to verify your account or directly login if auto-confirm is enabled.");
+        setMode('login'); // Switch back cleanly
+      }
     }
     setLoading(false);
   };
@@ -54,22 +55,79 @@ function AuthPage() {
   return (
     <main className="flex min-h-screen items-center justify-center p-6 bg-bg-deep text-white transition-all duration-1000">
       <div className="w-full max-w-sm flex flex-col items-center">
-        <Image src="/logo.png" priority alt="Ya Machur" width={80} height={80} className="mb-6 rounded-2xl shadow-[0_0_20px_rgba(255,255,255,0.1)]" />
+        <Image 
+          src="/logo.png" 
+          priority 
+          alt="Ya Machur" 
+          width={80} 
+          height={80} 
+          className={`mb-6 rounded-2xl transition-all duration-500 ${mode === 'signup' ? 'shadow-[0_0_30px_rgba(57,255,20,0.2)]' : 'shadow-[0_0_20px_rgba(255,255,255,0.1)]'}`} 
+        />
         <h1 className="text-3xl font-black tracking-tight mb-2">Ya Machur</h1>
-        <p className="text-brand-neon font-bold text-sm uppercase tracking-widest opacity-80 mb-8">Login to Focus</p>
+        <p className={`font-bold text-sm uppercase tracking-widest opacity-80 mb-8 transition-colors ${mode === 'signup' ? 'text-brand-neon' : 'text-neutral-400'}`}>
+          {mode === 'login' ? 'Login to Focus' : 'Join the Protocol'}
+        </p>
         
-        {errorMsg && <div className="bg-red-500/10 border border-red-500 text-red-500 p-3 rounded-xl mb-6 text-sm w-full text-center">{errorMsg}</div>}
+        {errorMsg && (
+          <div className="bg-red-500/10 border border-red-500 text-red-500 p-3 rounded-xl mb-6 text-sm w-full text-center">
+            {errorMsg}
+          </div>
+        )}
 
-        <form onSubmit={handleLogin} className="w-full flex flex-col gap-4">
-          <input type="email" placeholder="Email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-neutral-900 border-2 border-neutral-800 focus:border-neutral-600 rounded-xl px-4 py-3 outline-none" />
-          <input type="password" placeholder="Password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-neutral-900 border-2 border-neutral-800 focus:border-neutral-600 rounded-xl px-4 py-3 outline-none" />
+        <form onSubmit={handleSubmit} className="w-full flex flex-col gap-4">
+          <input 
+            type="email" 
+            placeholder="Email Address" 
+            required 
+            value={email} 
+            onChange={(e) => setEmail(e.target.value)} 
+            className="w-full bg-neutral-900 border-2 border-neutral-800 focus:border-neutral-600 rounded-xl px-4 py-3 outline-none" 
+          />
+          <input 
+            type="password" 
+            placeholder={mode === 'signup' ? 'Create Password (min 6)' : 'Password'} 
+            required 
+            minLength={6} 
+            value={password} 
+            onChange={(e) => setPassword(e.target.value)} 
+            className="w-full bg-neutral-900 border-2 border-neutral-800 focus:border-neutral-600 rounded-xl px-4 py-3 outline-none" 
+          />
+          {mode === 'signup' && (
+            <input 
+              type="password" 
+              placeholder="Confirm Password" 
+              required 
+              minLength={6} 
+              value={confirmPassword} 
+              onChange={(e) => setConfirmPassword(e.target.value)} 
+              className="w-full bg-neutral-900 border-2 border-neutral-800 focus:border-neutral-600 rounded-xl px-4 py-3 outline-none" 
+            />
+          )}
           
-          <button type="submit" disabled={loading} className="w-full bg-white text-black font-bold py-3 mt-2 rounded-xl hover:scale-[1.02] transition-transform">
-            {loading ? 'Processing...' : 'Login'}
+          <button 
+            type="submit" 
+            disabled={loading} 
+            className={`w-full font-black py-4 mt-2 rounded-xl transition-all outline-none disabled:opacity-50
+              ${mode === 'signup' 
+                ? 'bg-brand-neon text-black hover:bg-green-400 hover:scale-[1.03] active:scale-95 shadow-[0_0_30px_rgba(57,255,20,0.2)]' 
+                : 'bg-white text-black hover:scale-[1.02] active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.1)]'
+              }`}
+          >
+            {loading ? 'Processing...' : (mode === 'login' ? 'Login' : 'Create Account')}
           </button>
         </form>
-        <button type="button" onClick={handleSignup} disabled={loading} className="mt-4 text-neutral-500 hover:text-white font-bold text-sm uppercase tracking-widest transition-colors tracking-widest">
-          Create Account
+
+        <button 
+          type="button" 
+          onClick={() => {
+            setMode(mode === 'login' ? 'signup' : 'login');
+            setErrorMsg('');
+            setConfirmPassword('');
+          }} 
+          disabled={loading} 
+          className="mt-6 text-neutral-500 hover:text-white font-bold text-sm uppercase tracking-widest transition-colors"
+        >
+          {mode === 'login' ? 'Create Account' : '\u2190 Back to Login'}
         </button>
       </div>
     </main>
