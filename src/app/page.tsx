@@ -23,9 +23,11 @@ function AuthPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSuccessMsg('');
     if (mode === 'signup' && (!email || password.length < 6)) {
        setErrorMsg('Email is required and Password must be at least 6 characters.');
        return;
@@ -45,8 +47,10 @@ function AuthPage() {
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) setErrorMsg(error.message);
       else {
-        alert("Success! Check your email to verify your account or directly login if auto-confirm is enabled.");
+        setSuccessMsg("Account created! You can now log in.");
         setMode('login'); // Switch back cleanly
+        setPassword('');
+        setConfirmPassword('');
       }
     }
     setLoading(false);
@@ -71,6 +75,12 @@ function AuthPage() {
         {errorMsg && (
           <div className="bg-red-500/10 border border-red-500 text-red-500 p-3 rounded-xl mb-6 text-sm w-full text-center">
             {errorMsg}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="bg-brand-neon/10 border border-brand-neon text-brand-neon p-3 rounded-xl mb-6 text-sm w-full text-center font-bold">
+            {successMsg}
           </div>
         )}
 
@@ -122,6 +132,7 @@ function AuthPage() {
           onClick={() => {
             setMode(mode === 'login' ? 'signup' : 'login');
             setErrorMsg('');
+            setSuccessMsg('');
             setConfirmPassword('');
           }} 
           disabled={loading} 
