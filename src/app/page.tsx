@@ -35,7 +35,7 @@ type Pet = {
 type ActiveSession = {
   taskId: string | null;
   taskName: string;
-  mode: 'infinite' | 'pomodoro' | 'tamagotchi';
+  mode: 'infinite' | 'pomodoro' | 'tamagotchi' | 'tamagotchi_pomodoro';
   phase: 'work' | 'break';
   endTime: number | null;
 };
