@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseServer } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,6 +10,8 @@ export async function GET(req: Request) {
   if (!userId) {
     return NextResponse.json({ isActive: false, error: 'Authorization: Missing userId query' }, { status: 400 });
   }
+
+  const supabase = getSupabaseServer(req);
 
   const { data: settings } = await supabase
     .from('settings')

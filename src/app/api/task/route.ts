@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getSupabaseServer } from '@/lib/supabase';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 if (!supabaseUrl || supabaseUrl === 'https://x.supabase.co') console.error('SUPABASE ENV MISSING!');
@@ -18,7 +18,7 @@ function sendWebhook(message: string) {
   }).catch(err => console.error("Webhook error:", err));
 }
 
-async function getAppState(userId: string) {
+async function getAppState(userId: string, supabase: any) {
   const [{ data: tasks, error: taskError }, { data: settings, error: settingError }] = await Promise.all([
     supabase.from('tasks').select('*').eq('user_id', userId).order('position', { ascending: true }).order('created_at', { ascending: true }),
     supabase.from('settings').select('*').eq('user_id', userId).single()
@@ -28,7 +28,7 @@ async function getAppState(userId: string) {
   if (settingError && settingError.code !== 'PGRST116') console.error("Settings fetch error:", settingError);
 
   let activeSession = null;
-  if (settings && settings.active_task_id && settings.is_active) {
+  if (settings && settings.is_active) {
     activeSession = {
       taskId: settings.active_task_id,
       taskName: settings.active_task_name,
@@ -52,7 +52,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Missing userId parameter' }, { status: 400 });
   }
 
-  const state = await getAppState(userId);
+  const supabase = getSupabaseServer(req);
+  const state = await getAppState(userId, supabase);
   return NextResponse.json(state);
 }
 
@@ -64,6 +65,8 @@ export async function POST(req: Request) {
   if (!userId) {
     return NextResponse.json({ error: 'Missing userId parameter' }, { status: 400 });
   }
+
+  const supabase = getSupabaseServer(req);
 
   if (action === 'start_session') {
     const { data: task } = await supabase.from('tasks').select('*').eq('id', body.taskId).eq('user_id', userId).single();
@@ -94,14 +97,14 @@ export async function POST(req: Request) {
     
     if (settings && settings.session_end_time && Date.now() >= Number(settings.session_end_time) - 500) {
       if (settings.session_phase === 'work') {
-        const nextTime = Date.now() + POMODORO_BREAK_MS;
+        const nextTime = Date.now() + (settings.session_mode === 'tamagotchi_pomodoro' ? 10 * 60 * 1000 : POMODORO_BREAK_MS);
         await supabase.from('settings').update({
           session_phase: 'break',
           session_end_time: nextTime
         }).eq('user_id', userId);
-        sendWebhook(`Pomodoro finished! 5-minute break started for: ${settings.active_task_name}`);
+        sendWebhook(`Pomodoro finished! Break started for: ${settings.active_task_name}`);
       } else if (settings.session_phase === 'break') {
-        const nextTime = Date.now() + POMODORO_WORK_MS;
+        const nextTime = Date.now() + (settings.session_mode === 'tamagotchi_pomodoro' ? 50 * 60 * 1000 : POMODORO_WORK_MS);
         await supabase.from('settings').update({
           session_phase: 'work',
           session_end_time: nextTime
@@ -111,6 +114,6 @@ export async function POST(req: Request) {
     }
   }
 
-  const newState = await getAppState(userId);
+  const newState = await getAppState(userId, supabase);
   return NextResponse.json(newState);
 }
