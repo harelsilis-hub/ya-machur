@@ -697,7 +697,7 @@ export default function Home() {
                 <Image src="/logo.png" priority alt="Logo" width={64} height={64} className="rounded-2xl glow-purple-sm" />
                 <h1 className="text-4xl md:text-5xl font-black tracking-tight opacity-90 gradient-text">Ya Machur</h1>
               </div>
-              <div className="flex items-center justify-center gap-3">
+              <div className="flex flex-wrap items-center justify-center gap-3">
                 <p className="gradient-text-green font-bold text-sm uppercase tracking-widest opacity-80">Dashboard</p>
                 <Link href="/setup" className="btn-secondary px-3 py-1 rounded-md text-xs font-bold uppercase transition-colors">Setup</Link>
                 <button onClick={handleLogout} className="btn-danger px-3 py-1 rounded-md text-xs font-bold uppercase transition-colors">Logout</button>
@@ -706,7 +706,7 @@ export default function Home() {
 
             {activePet && (
               <div key={shakeKey} className={`mb-8 glass-card-purple p-6 flex flex-col items-center gap-4 glow-purple-sm ${shakeKey > 0 ? 'animate-shake' : ''}`}>
-                <div className="flex items-center gap-4 w-full text-center sm:text-left">
+                <div className="flex flex-col sm:flex-row items-center gap-4 w-full text-center sm:text-left">
                   <div className="animate-pet-float text-5xl shrink-0 mx-auto sm:mx-0 glow-pet">{getPetEmoji(activePet)}</div>
                   <div className="flex-1">
                     <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">
