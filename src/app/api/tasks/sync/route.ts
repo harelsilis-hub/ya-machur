@@ -55,8 +55,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, message: `Successfully wiped old list and synced ${parsedTitles.length} new tasks.` });
 
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.error('Sync API Error:', err);
-    return NextResponse.json({ error: 'Internal server error', details: err.message }, { status: 500 });
+    return NextResponse.json({ error: 'Internal server error', details: err instanceof Error ? err.message : String(err) }, { status: 500 });
   }
 }

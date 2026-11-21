@@ -37,7 +37,7 @@ export default function SetupGuide() {
             <div className="text-brand-neon font-bold tracking-widest text-sm uppercase mb-2">Step 1</div>
             <h2 className="text-2xl font-black mb-3">Add to Home Screen</h2>
             <p className="text-neutral-400">
-              Use the Safari <strong>Share</strong> icon to <strong className="text-white">"Add to Home Screen"</strong> for the full native app experience.
+              Use the Safari <strong>Share</strong> icon to <strong className="text-white">&quot;Add to Home Screen&quot;</strong> for the full native app experience.
             </p>
           </div>
 
@@ -71,7 +71,7 @@ export default function SetupGuide() {
           {/* Step 3 */}
           <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 md:p-8">
             <div className="text-brand-neon font-bold tracking-widest text-sm uppercase mb-2">Step 3</div>
-            <h2 className="text-2xl font-black mb-4">Install the "Enforcer" Shortcut</h2>
+            <h2 className="text-2xl font-black mb-4">Install the &quot;Enforcer&quot; Shortcut</h2>
             <p className="text-neutral-400 mb-8">
               When prompted during installation, paste the URL you copied in Step 2 into the configuration field.
             </p>
@@ -88,13 +88,13 @@ export default function SetupGuide() {
             <div className="text-brand-neon font-bold tracking-widest text-sm uppercase mb-2">Step 4</div>
             <h2 className="text-2xl font-black mb-3">Activate Ninja Mode (Automation)</h2>
             <p className="text-neutral-400 mb-4">
-              Open the Apple Shortcuts app, go to the <strong>Automation</strong> tab, and tap <strong>New Automation -&gt; "App"</strong>.
+              Open the Apple Shortcuts app, go to the <strong>Automation</strong> tab, and tap <strong>New Automation -&gt; &quot;App&quot;</strong>.
             </p>
             <ul className="list-disc pl-5 space-y-2 text-neutral-400">
               <li>Select your addictive apps (Instagram, TikTok, etc.).</li>
-              <li>Set to <strong className="text-white">"Run Immediately"</strong> (crucial for instant blocking).</li>
-              <li>Toggle <strong className="text-white">OFF</strong> "Notify When Run" (to keep it silent).</li>
-              <li>Action: Select "Run Shortcut" -&gt; "Ya Machur".</li>
+              <li>Set to <strong className="text-white">&quot;Run Immediately&quot;</strong> (crucial for instant blocking).</li>
+              <li>Toggle <strong className="text-white">OFF</strong> &quot;Notify When Run&quot; (to keep it silent).</li>
+              <li>Action: Select &quot;Run Shortcut&quot; -&gt; &quot;Ya Machur&quot;.</li>
             </ul>
           </div>
         </div>

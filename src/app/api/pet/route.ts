@@ -117,7 +117,7 @@ export async function POST(req: Request) {
 
     if (!existing) {
       // 1. Create New Pet
-      const insertData: any = { user_id: userId, name: petName, status: 'active' };
+      const insertData: Record<string, unknown> = { user_id: userId, name: petName, status: 'active' };
       const { data: newPet, error } = await supabase
         .from('pets')
         .insert([{ ...insertData, species: randomSpecies() }])

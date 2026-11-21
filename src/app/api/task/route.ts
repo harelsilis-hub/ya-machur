@@ -1,3 +1,4 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabase';
 
@@ -18,7 +19,7 @@ function sendWebhook(message: string) {
   }).catch(err => console.error("Webhook error:", err));
 }
 
-async function getAppState(userId: string, supabase: any) {
+async function getAppState(userId: string, supabase: SupabaseClient) {
   const [{ data: tasks, error: taskError }, { data: settings, error: settingError }] = await Promise.all([
     supabase.from('tasks').select('*').eq('user_id', userId).order('position', { ascending: true }).order('created_at', { ascending: true }),
     supabase.from('settings').select('*').eq('user_id', userId).single()

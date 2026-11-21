@@ -6,7 +6,9 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable';
+import { motion, AnimatePresence } from 'framer-motion';
 import { CSS } from '@dnd-kit/utilities';
+import type { User } from '@supabase/supabase-js';
 
 // ─────────────────────────────────────────────
 // Types
@@ -56,16 +58,16 @@ const XP_BABY_TO_ADULT  = 1200;   // 2 h cumulative
 const XP_ADULT_TO_RETIRE = 3000;  // 5 h cumulative
 
 const PET_SPECIES_DATA: Record<Pet['species'], Record<Pet['evolution_stage'], string>> = {
-  bird: { egg: '🥚', baby: '🐣', adult: '🐔' },
-  cat: { egg: '📦', baby: '🐱', adult: '🦁' },
-  dragon: { egg: '💎', baby: '🦎', adult: '🐉' },
-  robot: { egg: '💾', baby: '🤖', adult: '🛸' },
-  ocean: { egg: '🫧', baby: '🦭', adult: '🐋' },
+  bird:   { egg: '/pets/bird_egg.png',   baby: '/pets/bird_baby.png',   adult: '/pets/bird_adult.png'   },
+  cat:    { egg: '/pets/cat_egg.png',    baby: '/pets/cat_baby.png',    adult: '/pets/cat_adult.png'    },
+  dragon: { egg: '/pets/dragon_egg.png', baby: '/pets/dragon_baby.png', adult: '/pets/dragon_adult.png' },
+  robot:  { egg: '/pets/robot_egg.png',  baby: '/pets/robot_baby.png',  adult: '/pets/robot_adult.png'  },
+  ocean:  { egg: '/pets/ocean_egg.png',  baby: '/pets/ocean_baby.png',  adult: '/pets/ocean_adult.png'  },
 };
 
-function getPetEmoji(pet: Pet | null | undefined): string {
-  if (!pet) return '🥚';
-  const species = pet.species || 'bird';
+function getPetImage(pet: Pet | null | undefined): string {
+  if (!pet) return '/pets/dragon_egg.png';
+  const species = pet.species || 'dragon';
   return PET_SPECIES_DATA[species][pet.evolution_stage];
 }
 
@@ -75,10 +77,114 @@ const PET_LABEL: Record<Pet['evolution_stage'], string> = {
   adult: 'Adult',
 };
 
-function xpToNextStage(stage: Pet['evolution_stage'], xp: number): number {
-  if (stage === 'egg') return XP_EGG_TO_BABY - xp;
-  if (stage === 'baby') return XP_BABY_TO_ADULT - xp;
-  return XP_ADULT_TO_RETIRE - xp;
+const XP_PER_SECOND = 1 / 6;       // 1 XP every 6 s of focus
+const MAX_SESSION_AGE_MS = 24 * 60 * 60 * 1000;
+const sessionStartKey = (userId: string) => `ym_session_start_${userId}`;
+
+function readSessionStart(userId: string): number | null {
+  try {
+    const raw = Number(localStorage.getItem(sessionStartKey(userId)));
+    const age = Date.now() - raw;
+    return raw > 0 && age >= 0 && age < MAX_SESSION_AGE_MS ? raw : null;
+  } catch { return null; }
+}
+function writeSessionStart(userId: string, t: number | null) {
+  try {
+    if (t === null) localStorage.removeItem(sessionStartKey(userId));
+    else localStorage.setItem(sessionStartKey(userId), String(t));
+  } catch { /* storage unavailable */ }
+}
+const xpForElapsed = (ms: number) => Math.floor(Math.max(0, ms) * XP_PER_SECOND / 1000);
+
+// Deterministic "random" spread so render stays pure and sparkles don't jump on re-render
+const spread = (i: number, mod: number) => ((i * 37 + 11) % mod) / mod;
+
+function PetDisplay({ pet, size = 80, className = '', isHappy = false, isDead = false, showShadow = true }: { pet: Pet | null | undefined; size?: number; className?: string; isHappy?: boolean; isDead?: boolean; showShadow?: boolean }) {
+  const isEgg = pet?.evolution_stage === 'egg';
+  
+  return (
+    <div className={`relative flex flex-col items-center justify-center ${className}`} style={{ width: size, height: size + 10 }}>
+      {/* Dynamic Shadow */}
+      {showShadow && (
+        <motion.div 
+          className="absolute bottom-0 w-[60%] h-2 bg-black/10 rounded-[100%] blur-[2px]"
+          animate={{ 
+            scale: isDead ? 1 : [1, 0.8, 1],
+            opacity: isDead ? 0.2 : [0.15, 0.05, 0.15],
+            x: "-50%"
+          }}
+          style={{ left: "50%" }}
+          transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
+        />
+      )}
+      
+      {/* Pet Image with Squash & Stretch */}
+      <motion.div
+        animate={isDead ? {
+          y: [0, 5, 0],
+          rotate: [0, 2, 0],
+          filter: "grayscale(1) opacity(0.8)"
+        } : {
+          y: isHappy ? [0, -25, 0] : [0, -10, 0],
+          scaleX: isHappy ? [1, 0.9, 1.1, 1] : [1, 1.02, 1],
+          scaleY: isHappy ? [1, 1.2, 0.9, 1] : [1, 0.98, 1],
+          rotate: isEgg ? [0, -3, 3, 0] : [0, 1, -1, 0]
+        }}
+        transition={{ 
+          repeat: Infinity, 
+          duration: isHappy ? 0.6 : 3, 
+          ease: isHappy ? "easeOut" : "easeInOut" 
+        }}
+        whileHover={{ scale: 1.1, rotate: isEgg ? 10 : 5 }}
+        whileTap={{ scale: 0.9, scaleY: 0.8 }}
+        className="relative z-10 cursor-pointer"
+      >
+        <Image 
+          src={getPetImage(pet)} 
+          alt={pet?.name ?? 'Pet'} 
+          width={size} 
+          height={size} 
+          className="object-contain drop-shadow-2xl"
+          priority
+        />
+      </motion.div>
+      
+      {/* Sparkle Particles for Happiness */}
+      <AnimatePresence>
+        {isHappy && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 pointer-events-none"
+          >
+            {[...Array(6)].map((_, i) => (
+              <motion.div
+                key={i}
+                initial={{ scale: 0, x: 0, y: 0, opacity: 0 }}
+                animate={{ 
+                  scale: [0, 1, 0],
+                  opacity: [0, 1, 0],
+                  x: (spread(i, 97) - 0.5) * size * 1.5,
+                  y: -spread(i + 3, 89) * size - 20,
+                }}
+                transition={{ 
+                  repeat: Infinity, 
+                  duration: 1.5, 
+                  delay: i * 0.3,
+                  ease: "easeOut"
+                }}
+                className="absolute left-1/2 top-1/2 text-yellow-400"
+                style={{ fontSize: size / 4 }}
+              >
+                {['✨', '⭐', '❤️'][i % 3]}
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
 }
 
 function formatElapsed(seconds: number) {
@@ -124,7 +230,7 @@ function AuthPage() {
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) setErrorMsg(error.message);
       else {
-        setSuccessMsg('Account created! You can now log in.');
+        setSuccessMsg('Account created. You can now sign in.');
         setMode('login');
         setPassword('');
         setConfirmPassword('');
@@ -145,8 +251,8 @@ function AuthPage() {
           className={`mb-6 rounded-2xl transition-all duration-500 ${mode === 'signup' ? 'glow-purple' : 'glow-purple-sm'}`}
         />
         <h1 className="text-3xl font-black tracking-tight mb-2 gradient-text">Ya Machur</h1>
-        <p className={`font-bold text-sm uppercase tracking-widest opacity-80 mb-8 transition-colors ${mode === 'signup' ? 'text-glass-cyan' : 'text-neutral-400'}`}>
-          {mode === 'login' ? 'Login to Focus' : 'Join the Protocol'}
+        <p className={`font-bold text-sm mb-8 transition-colors text-neutral-400`}>
+          {mode === 'login' ? 'Sign in to your account' : 'Create your account'}
         </p>
 
         {errorMsg && (
@@ -163,7 +269,7 @@ function AuthPage() {
         <form onSubmit={handleSubmit} className="w-full flex flex-col gap-4">
           <input
             type="email"
-            placeholder="Email Address"
+            placeholder="Email address"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -192,9 +298,9 @@ function AuthPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full font-bold py-4 mt-2 rounded-xl transition-all btn-primary text-white disabled:opacity-50 uppercase tracking-widest text-sm"
+            className="w-full font-bold py-4 mt-2 rounded-xl transition-all btn-primary text-white disabled:opacity-50 text-sm"
           >
-            {loading ? 'Processing...' : (mode === 'login' ? 'Login' : 'Create Account')}
+            {loading ? 'Please wait…' : (mode === 'login' ? 'Sign in' : 'Create account')}
           </button>
         </form>
 
@@ -202,9 +308,9 @@ function AuthPage() {
           type="button"
           onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setErrorMsg(''); setSuccessMsg(''); setConfirmPassword(''); }}
           disabled={loading}
-          className="mt-6 text-neutral-500 hover:text-white font-bold text-sm uppercase tracking-widest transition-colors"
+          className="mt-6 text-neutral-400 hover:text-white font-medium text-sm transition-colors"
         >
-          {mode === 'login' ? 'Create Account' : '← Back to Login'}
+          {mode === 'login' ? 'Create an account' : '← Back to sign in'}
         </button>
       </div>
     </main>
@@ -279,11 +385,10 @@ function XPBar({ pet, potentialXp = 0 }: { pet?: Pet | null; potentialXp?: numbe
 function PetHallCard({ pet }: { pet: Pet }) {
   return (
     <div className="glass-card p-4 flex flex-col items-center gap-2 text-center glass-card-hover">
-      <div className="text-4xl mb-1">🏆</div>
-      <div className="text-2xl drop-shadow-[0_0_15px_rgba(255,215,0,0.5)]">{getPetEmoji(pet)}</div>
+      <PetDisplay pet={pet} size={64} showShadow={false} />
       <div className="font-black text-sm">{pet.name}</div>
       <div className="text-xs text-neutral-400">{pet.current_xp.toLocaleString()} XP · {pet.sessions_survived} sessions</div>
-      <div className="text-xs text-yellow-500/80 font-bold uppercase tracking-widest">Retired</div>
+      <div className="text-xs text-neutral-400 font-medium">Retired</div>
     </div>
   );
 }
@@ -318,7 +423,7 @@ function HonorModal({
             {activePet?.name ?? 'Your Pet'} has fallen.
           </div>
           <div className="text-neutral-600 text-sm uppercase tracking-widest font-bold">
-            A new egg is hatching...
+            A new companion is on the way.
           </div>
         </div>
       </div>
@@ -327,12 +432,11 @@ function HonorModal({
 
   if (modalState === 'evolved') {
     const stage = activePet?.evolution_stage ?? 'baby';
-    const emoji = getPetEmoji(activePet);
     return (
       <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm select-none text-center">
         <div className="animate-evolve space-y-6">
-          <div className="text-8xl md:text-[10rem]">{emoji}</div>
-          <div className="font-black text-3xl md:text-5xl text-brand-neon uppercase">EVOLVED!</div>
+          <div className="flex justify-center"><PetDisplay pet={activePet} size={160} isHappy={true} /></div>
+          <div className="font-black text-3xl md:text-5xl text-brand-neon uppercase">Evolved</div>
           <div className="text-neutral-400 font-bold uppercase tracking-widest px-4">
             {activePet?.name} is now a {PET_LABEL[stage as Pet['evolution_stage']]}
           </div>
@@ -346,9 +450,9 @@ function HonorModal({
       <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm select-none">
         <div className="animate-evolve text-center space-y-6">
           <div className="text-8xl md:text-[10rem]">🏆</div>
-          <div className="font-black text-3xl md:text-5xl text-yellow-400">HALL OF FAME!</div>
-          <div className="text-neutral-300 font-bold text-xl">{activePet?.name} has been immortalized.</div>
-          <div className="text-neutral-500 text-sm uppercase tracking-widest">A new egg awaits...</div>
+          <div className="font-black text-3xl md:text-5xl text-yellow-400">Retired with honors</div>
+          <div className="text-neutral-300 font-bold text-xl">{activePet?.name} has reached the top level.</div>
+          <div className="text-neutral-500 text-sm uppercase tracking-widest">A new egg is ready.</div>
         </div>
       </div>
     );
@@ -358,17 +462,16 @@ function HonorModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-6 select-none">
       <div className="animate-modal-in w-full max-w-md glass-card-purple p-8 md:p-10 flex flex-col items-center gap-8 glow-purple">
         <div className="text-center space-y-3">
-          <div className="text-6xl animate-pet-idle glow-pet">{getPetEmoji(activePet)}</div>
+          <div className="flex justify-center"><PetDisplay pet={activePet} size={100} isHappy={true} /></div>
           <div className="font-black text-sm uppercase tracking-widest text-neutral-400">{activePet?.name}</div>
           <div className="gradient-text font-black text-4xl">+{potentialXP.toLocaleString()} XP</div>
-          <div className="text-neutral-400 text-xs uppercase tracking-widest">Potential earned</div>
+          <div className="text-neutral-400 text-xs font-medium">XP pending confirmation</div>
         </div>
 
         <div className="text-center">
           <h2 className="text-xl md:text-2xl font-black leading-tight">
-            Hand on heart:<br />
-            <span className="text-white">Did you actually focus,</span><br />
-            <span className="text-neutral-400">or did you waste time?</span>
+            Session complete<br />
+            <span className="text-neutral-400 text-base font-medium">Were you focused for the whole session?</span>
           </h2>
         </div>
 
@@ -379,7 +482,7 @@ function HonorModal({
             disabled={resolving}
             className="w-full py-5 rounded-2xl font-black text-xl btn-primary text-white disabled:opacity-50"
           >
-            {resolving ? 'Saving...' : '✓ I Focused'}
+            {resolving ? 'Saving...' : 'Yes, I stayed focused'}
           </button>
           <button
             id="honor-broke-btn"
@@ -387,12 +490,12 @@ function HonorModal({
             disabled={resolving}
             className="w-full py-5 rounded-2xl font-black text-xl btn-danger disabled:opacity-50"
           >
-            {resolving ? '...' : '✗ I Broke'}
+            {resolving ? '...' : 'No, I got distracted'}
           </button>
         </div>
 
         <p className="text-xs text-neutral-700 italic text-center">
-          No one is watching. But your pet knows.
+          Be honest — your companion&apos;s progress depends on it.
         </p>
       </div>
     </div>
@@ -404,7 +507,7 @@ function HonorModal({
 // ─────────────────────────────────────────────
 
 export default function Home() {
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [authChecking, setAuthChecking] = useState(true);
 
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -482,8 +585,10 @@ export default function Home() {
   useEffect(() => {
     if (user) {
       fetchState();
-      const interval = setInterval(fetchState, 3000);
-      return () => clearInterval(interval);
+      const tick = () => { if (!document.hidden) fetchState(); };
+      const interval = setInterval(tick, 4000);
+      document.addEventListener('visibilitychange', tick);
+      return () => { clearInterval(interval); document.removeEventListener('visibilitychange', tick); };
     }
   }, [user, fetchState]);
 
@@ -493,14 +598,17 @@ export default function Home() {
   const transitioningRef = useRef(false);
 
   useEffect(() => {
-    if (activeSession?.mode === 'tamagotchi' && !tamagotchiSession) {
-      const startTime = activeSession.endTime || Date.now();
-      setTamagotchiSession({
-        startTime,
-        potentialXP: Math.floor(Math.max(0, Date.now() - startTime) / 6000)
-      });
+    if (!user || tamagotchiSession) return;
+    const isTama = activeSession?.mode === 'tamagotchi' || activeSession?.mode === 'tamagotchi_pomodoro';
+    if (isTama) {
+      // Restore after a reload instead of resetting the session to 0 XP
+      const startTime = readSessionStart(user.id) ?? Date.now();
+      writeSessionStart(user.id, startTime);
+      setTamagotchiSession({ startTime, potentialXP: xpForElapsed(Date.now() - startTime) });
+    } else if (activeSession === null && !loading) {
+      writeSessionStart(user.id, null); // server says no session: drop stale local start
     }
-  }, [activeSession, tamagotchiSession]);
+  }, [activeSession, tamagotchiSession, user, loading]);
 
   useEffect(() => {
     const timerInterval = setInterval(() => {
@@ -510,7 +618,7 @@ export default function Home() {
       setTamagotchiSession(prev => {
         if (!prev) return prev;
         const elapsed = Math.max(0, currentNow - prev.startTime);
-        const newXP = Math.floor(elapsed / 6000); 
+        const newXP = xpForElapsed(elapsed);
         if (newXP > prev.potentialXP) setHappyKey(k => k + 1); 
         return { ...prev, potentialXP: newXP };
       });
@@ -529,6 +637,21 @@ export default function Home() {
     }, 1000);
     return () => clearInterval(timerInterval);
   }, [user]);
+
+  useEffect(() => {
+    if (!tamagotchiSession) { document.title = 'Ya Machur'; return; }
+    const left = activeSession?.endTime ? Math.max(0, Math.floor((activeSession.endTime - now) / 1000)) : null;
+    const s = left ?? Math.floor((now - tamagotchiSession.startTime) / 1000);
+    const mm = Math.floor(s / 60).toString().padStart(2, '0');
+    document.title = `${mm}:${(s % 60).toString().padStart(2, '0')} · +${tamagotchiSession.potentialXP} XP · Ya Machur`;
+  }, [tamagotchiSession, activeSession, now]);
+
+  useEffect(() => {
+    if (!tamagotchiSession) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [tamagotchiSession]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -589,8 +712,10 @@ export default function Home() {
       });
       const data = await res.json();
       if (data.activePet) setActivePet(data.activePet);
-      setCustomPetName(''); 
-      setTamagotchiSession({ startTime: Date.now(), potentialXP: 0 });
+      setCustomPetName('');
+      const startTime = Date.now();
+      writeSessionStart(user.id, startTime);
+      setTamagotchiSession({ startTime, potentialXP: 0 });
       setActiveSession({
         taskId: null,
         taskName: mode === 'pomodoro' ? 'Pomodoro 50/10' : 'Tamagotchi Session',
@@ -603,6 +728,14 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRenamePet = async () => {
+    const name = customPetName.trim();
+    if (!user || !activePet || !name) { setCustomPetName(''); return; }
+    setActivePet({ ...activePet, name });
+    setCustomPetName('');
+    await supabase.from('pets').update({ name }).eq('id', activePet.id).eq('user_id', user.id);
   };
 
   const handleRequestStop = () => { if (tamagotchiSession) setModalState('asking'); };
@@ -618,6 +751,7 @@ export default function Home() {
         body: JSON.stringify({ action: 'resolve_session', userId: user.id, verdict, potentialXp }),
       });
       const data = await res.json();
+      writeSessionStart(user.id, null);
       setTamagotchiSession(null);
       setActiveSession(null);
       if (verdict === 'broke') {
@@ -667,7 +801,7 @@ export default function Home() {
 
   const handleLogout = async () => { await supabase.auth.signOut(); };
 
-  if (authChecking) return <main className="flex min-h-screen items-center justify-center bg-bg-deep text-white"><div className="animate-pulse opacity-50 uppercase tracking-widest">Connecting...</div></main>;
+  if (authChecking) return <main className="flex min-h-screen items-center justify-center bg-bg-deep text-white"><div className="animate-pulse opacity-50 uppercase tracking-widest">Loading…</div></main>;
   if (!user) return <AuthPage />;
 
   const isPomodoro = activeSession?.mode === 'pomodoro';
@@ -680,13 +814,13 @@ export default function Home() {
       <HonorModal modalState={modalState} potentialXP={tamagotchiSession?.potentialXP ?? 0} activePet={activePet} onFocused={() => handleVerdict('focused')} onBroke={() => handleVerdict('broke')} resolving={resolving} />
 
       <main className={`flex min-h-screen items-center justify-center px-6 py-12 transition-all duration-1000 overflow-y-auto ${
-        isTamagotchi ? 'bg-glass-scene text-white' : activeSession ? (isBreak ? 'bg-white text-black' : 'bg-black text-white') : 'bg-glass-scene text-white'
+        'bg-glass-scene text-white'
       }`}>
 
         {activeSession && isTamagotchi && !tamagotchiSession && (
-          <div className="flex flex-col items-center gap-6 animate-pulse">
-            <div className="text-8xl glow-pet">🥚</div>
-            <div className="font-black text-sm uppercase tracking-widest text-neutral-400">Initializing Protocol...</div>
+          <div className="flex flex-col items-center gap-4">
+            <div className="text-sm font-medium text-neutral-400">Restoring your session…</div>
+            <button onClick={() => action({ action: 'stop_session' })} className="btn-secondary px-4 py-2 rounded-lg text-sm font-medium">Cancel session</button>
           </div>
         )}
 
@@ -695,19 +829,21 @@ export default function Home() {
             <div className="mb-10 text-center flex flex-col items-center">
               <div className="flex items-center gap-4 mb-3">
                 <Image src="/logo.png" priority alt="Logo" width={64} height={64} className="rounded-2xl glow-purple-sm" />
-                <h1 className="text-4xl md:text-5xl font-black tracking-tight opacity-90 gradient-text">Ya Machur</h1>
+                <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-white">Ya Machur</h1>
               </div>
               <div className="flex flex-wrap items-center justify-center gap-3">
-                <p className="gradient-text-green font-bold text-sm uppercase tracking-widest opacity-80">Dashboard</p>
-                <Link href="/setup" className="btn-secondary px-3 py-1 rounded-md text-xs font-bold uppercase transition-colors">Setup</Link>
-                <button onClick={handleLogout} className="btn-danger px-3 py-1 rounded-md text-xs font-bold uppercase transition-colors">Logout</button>
+                <p className="text-neutral-400 font-medium text-sm">Focus dashboard</p>
+                <Link href="/setup" className="btn-secondary px-3 py-1 rounded-md text-xs font-medium transition-colors">Setup</Link>
+                <button onClick={handleLogout} className="btn-secondary px-3 py-1 rounded-md text-xs font-medium transition-colors">Sign out</button>
               </div>
             </div>
 
             {activePet && (
               <div key={shakeKey} className={`mb-8 glass-card-purple p-6 flex flex-col items-center gap-4 glow-purple-sm ${shakeKey > 0 ? 'animate-shake' : ''}`}>
                 <div className="flex flex-col sm:flex-row items-center gap-4 w-full text-center sm:text-left">
-                  <div className="animate-pet-float text-5xl shrink-0 mx-auto sm:mx-0 glow-pet">{getPetEmoji(activePet)}</div>
+                  <div className="shrink-0 mx-auto sm:mx-0">
+                    <PetDisplay pet={activePet} size={72} />
+                  </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-center sm:justify-start gap-2 mb-1">
                       <span className="font-black text-lg">{activePet.name}</span>
@@ -719,14 +855,14 @@ export default function Home() {
                     <div className="text-sm text-neutral-400">{activePet.sessions_survived} survived · {activePet.current_xp.toLocaleString()} XP</div>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 shrink-0">
-                    <button onClick={() => handleStartTamagotchi('infinite')} disabled={loading} className="shrink-0 btn-primary px-5 py-3 rounded-xl text-sm uppercase tracking-widest font-bold text-white">Start Session</button>
+                    <button onClick={() => handleStartTamagotchi('infinite')} disabled={loading} className="shrink-0 btn-primary px-5 py-3 rounded-xl text-sm uppercase tracking-widest font-bold text-white">Start focus session</button>
                     <button onClick={() => handleStartTamagotchi('pomodoro')} disabled={loading} className="shrink-0 btn-secondary px-5 py-3 rounded-xl text-sm uppercase tracking-widest font-bold">Pomodoro 50/10</button>
                   </div>
                 </div>
                 {customPetName && (
                    <div className="w-full flex gap-2 mt-4 glass-card p-2 rounded-xl">
                      <input value={customPetName} onChange={(e) => setCustomPetName(e.target.value)} placeholder="Enter name..." className="flex-1 bg-transparent border-b-2 border-white/10 px-2 py-1 text-sm outline-none focus:border-glass-purple font-bold text-white shadow-none" />
-                     <button onClick={() => handleStartTamagotchi('infinite')} className="text-xs font-black text-glass-cyan uppercase tracking-widest px-2 hover:opacity-70">Save</button>
+                     <button onClick={handleRenamePet} className="text-xs font-black text-glass-cyan uppercase tracking-widest px-2 hover:opacity-70">Save</button>
                      <button onClick={() => setCustomPetName('')} className="text-xs font-bold text-neutral-400 uppercase tracking-widest px-2 hover:opacity-70">Cancel</button>
                    </div>
                 )}
@@ -736,19 +872,21 @@ export default function Home() {
 
             {!activePet && !loading && (
               <div className="mb-8 glass-card border-dashed border-white/20 p-8 flex flex-col items-center gap-6 text-center glow-purple-sm">
-                <div className="text-6xl animate-pet-float glow-pet">🥚</div>
-                <div className="font-black text-xl mb-1 text-white">Your mystery egg is waiting.<br/><span className="text-neutral-400 text-sm font-normal">What shall we name it?</span></div>
+                <div className="flex justify-center">
+                  <PetDisplay pet={null} size={96} />
+                </div>
+                <div className="font-black text-xl mb-1 text-white">Meet your focus companion.<br/><span className="text-neutral-400 text-sm font-normal">Give it a name to get started.</span></div>
                 <input type="text" maxLength={15} placeholder="Enter Name..." value={customPetName} onChange={(e) => setCustomPetName(e.target.value)} className="w-full max-w-[200px] glass-input text-center font-bold text-lg px-2 py-2" />
                 <div className="flex flex-col sm:flex-row gap-4">
-                  <button onClick={() => handleStartTamagotchi('infinite')} disabled={loading} className="btn-primary text-white font-black px-8 py-4 rounded-xl uppercase tracking-widest text-sm">Hatch {customPetName.trim() || 'My Egg'}</button>
+                  <button onClick={() => handleStartTamagotchi('infinite')} disabled={loading} className="btn-primary text-white font-black px-8 py-4 rounded-xl uppercase tracking-widest text-sm">Start with {customPetName.trim() || 'a new companion'}</button>
                   <button onClick={() => handleStartTamagotchi('pomodoro')} disabled={loading} className="btn-secondary font-black px-8 py-4 rounded-xl uppercase tracking-widest text-sm">Pomodoro 50/10</button>
                 </div>
               </div>
             )}
 
             <form onSubmit={handleAddTask} className="flex gap-4 mb-10 w-full">
-              <input type="text" required value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="What must be done?" className="flex-1 glass-input px-4 py-4 text-xl" autoComplete="off" />
-              <button type="submit" disabled={!inputText.trim() || loading} className="btn-primary text-white font-bold px-8 rounded-xl uppercase tracking-widest text-sm">Add</button>
+              <input type="text" required value={inputText} onChange={(e) => setInputText(e.target.value)} placeholder="Add a task…" className="flex-1 glass-input px-4 py-3 text-base" autoComplete="off" />
+              <button type="submit" disabled={!inputText.trim() || loading} className="btn-primary text-white font-bold px-8 rounded-lg text-sm">Add task</button>
             </form>
 
             <div className="space-y-8">
@@ -757,12 +895,12 @@ export default function Home() {
                   <SortableContext items={tasks.filter(t => !t.completed).map(t => t.id)} strategy={verticalListSortingStrategy}>
                     {tasks.filter(t => !t.completed).map(task => <SortableTaskItem key={task.id} task={task} action={action} />)}
                   </SortableContext>
-                  {tasks.filter(t => !t.completed).length === 0 && <div className="text-center text-neutral-400 py-10 italic glass-card border-dashed">Nothing to do. Add a task above.</div>}
+                  {tasks.filter(t => !t.completed).length === 0 && <div className="text-center text-neutral-400 py-10 italic glass-card border-dashed">No open tasks. Add one above.</div>}
                 </div>
               </DndContext>
               {tasks.filter(t => t.completed).length > 0 && (
                 <div className="pt-6 border-t border-white/10">
-                  <h3 className="text-neutral-400 font-bold uppercase tracking-widest text-sm mb-4">Completed</h3>
+                  <h3 className="text-neutral-400 font-semibold text-sm mb-4">Completed</h3>
                   <div className="space-y-3">
                     {tasks.filter(t => t.completed).map(task => (
                       <div key={task.id} className="group glass-card p-4 flex items-center justify-between opacity-60 hover:opacity-100 transition-opacity">
@@ -777,7 +915,7 @@ export default function Home() {
 
             {retiredPets.length > 0 && (
               <div className="mt-12 pt-8 border-t border-white/10">
-                <button onClick={() => setShowHallOfFame(h => !h)} className="flex items-center gap-3 mb-6 text-neutral-400 hover:text-yellow-400 transition-colors group"><span className="text-2xl drop-shadow-md">🏆</span><h3 className="font-black uppercase tracking-widest text-sm">Hall of Fame ({retiredPets.length})</h3></button>
+                <button onClick={() => setShowHallOfFame(h => !h)} className="flex items-center gap-3 mb-6 text-neutral-400 hover:text-yellow-400 transition-colors group"><h3 className="font-semibold text-sm">Retired companions ({retiredPets.length})</h3></button>
                 {showHallOfFame && <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">{retiredPets.map(pet => <PetHallCard key={pet.id} pet={pet} />)}</div>}
               </div>
             )}
@@ -793,11 +931,11 @@ export default function Home() {
               </div>
               <div className="absolute inset-0 pointer-events-none">
                 {[...Array(6)].map((_, i) => (
-                  <div key={i} className="absolute animate-sparkle opacity-0 text-glass-cyan/60 text-xl" style={{ left: `${20 + Math.random() * 60}%`, top: `${40 + Math.random() * 40}%`, animationDelay: `${i * 0.7}s` }}>✨</div>
+                  <div key={i} className="absolute animate-sparkle opacity-0 text-glass-cyan/60 text-xl" style={{ left: `${20 + spread(i, 97) * 60}%`, top: `${40 + spread(i + 5, 89) * 40}%`, animationDelay: `${i * 0.7}s` }}>✨</div>
                 ))}
               </div>
-              <div key={happyKey} className={`text-[7rem] md:text-[10rem] leading-none relative z-10 transition-all duration-300 glow-pet ${happyKey > 0 ? 'animate-happy-jump' : 'animate-pet-float'}`}>
-                {getPetEmoji(activePet)}
+              <div key={happyKey} className="relative z-10 transition-all duration-300">
+                <PetDisplay pet={activePet} size={200} isHappy={happyKey > 0} className="md:w-[250px] md:h-[250px]" />
               </div>
             </div>
             <div className={`font-black text-lg uppercase tracking-widest transition-all duration-300 ${happyKey > 0 ? 'gradient-text scale-110' : 'text-neutral-300'}`}>
@@ -810,25 +948,25 @@ export default function Home() {
                   : formatElapsed(elapsedSeconds)}
               </div>
               <div className="gradient-text font-black text-2xl md:text-3xl">+{tamagotchiSession.potentialXP.toLocaleString()} XP</div>
-              <div className="text-xs text-neutral-400 uppercase tracking-widest font-bold">Potential earned</div>
+              <div className="text-xs text-neutral-400 font-medium">XP earned this session</div>
             </div>
             <div className="px-4 w-full max-w-xs mx-auto"><XPBar pet={activePet} potentialXp={tamagotchiSession.potentialXP} /></div>
-            <button onClick={handleRequestStop} disabled={resolving} className="w-full btn-primary font-black text-xl px-12 py-5 rounded-2xl text-white"><span className="relative z-10">End Session</span></button>
+            <button onClick={handleRequestStop} disabled={resolving} className="w-full btn-primary font-semibold text-lg px-12 py-4 rounded-xl text-white"><span className="relative z-10">End session</span></button>
           </div>
         )}
 
         {activeSession && (isBreak || !isTamagotchi) && (
           <div className="w-full max-w-5xl text-center space-y-12">
             {isBreak ? (
-              <div className="space-y-8"><h2 className="font-black text-6xl md:text-8xl gradient-text-green animate-pulse drop-shadow-lg">BREAK TIME!<br/>GO TO SCROLL</h2><div className="tabular-nums font-black text-6xl md:text-8xl text-white/90">{calculateTimeLeft(activeSession.endTime)}</div></div>
+              <div className="space-y-8"><h2 className="font-bold text-5xl md:text-7xl text-neutral-400">Break time</h2><div className="tabular-nums font-black text-6xl md:text-8xl text-white/90">{calculateTimeLeft(activeSession.endTime)}</div></div>
             ) : (
-              <><div><div className="font-bold uppercase tracking-[0.4em] text-sm mb-8 animate-pulse text-glass-pink">{isPomodoro ? 'Pomodoro Work Phase' : 'Infinite Focus'}</div><h2 className="font-black text-4xl md:text-6xl text-white">{activeSession.taskName}</h2></div>
+              <><div><div className="font-medium text-sm mb-6 text-neutral-400">{isPomodoro ? 'Pomodoro · focus' : 'Open-ended focus'}</div><h2 className="font-black text-4xl md:text-6xl text-white">{activeSession.taskName}</h2></div>
                 {isPomodoro && <div className="tabular-nums font-black py-8 text-[6rem] md:text-[12rem] text-white drop-shadow-lg">{calculateTimeLeft(activeSession.endTime)}</div>}
               </>
             )}
             <div className="flex flex-col items-center gap-8 pt-8">
-              <button onClick={isTamagotchi ? handleRequestStop : () => action({ action: 'stop_session' })} className={`font-black text-xl md:text-3xl px-12 py-6 rounded-2xl transition-all ${isBreak ? 'btn-secondary' : 'btn-danger'}`}><span className="relative z-10">{isBreak && isTamagotchi ? 'End Session' : isBreak ? 'Skip Break' : "I'M DONE"}</span></button>
-              {!isBreak && <button onClick={() => action({ action: 'stop_session' })} className="text-neutral-500 hover:text-white transition-colors text-sm font-medium uppercase tracking-widest">Cancel Task</button>}
+              <button onClick={isTamagotchi ? handleRequestStop : () => action({ action: 'stop_session' })} className={`font-black text-xl md:text-3xl px-12 py-6 rounded-2xl transition-all ${isBreak ? 'btn-secondary' : 'btn-danger'}`}><span className="relative z-10">{isBreak && isTamagotchi ? 'End session' : isBreak ? 'Skip break' : 'Finish'}</span></button>
+              {!isBreak && <button onClick={() => action({ action: 'stop_session' })} className="text-neutral-500 hover:text-white transition-colors text-sm font-medium uppercase tracking-widest">Cancel</button>}
             </div>
           </div>
         )}
