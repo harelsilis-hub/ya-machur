@@ -58,15 +58,15 @@ const XP_BABY_TO_ADULT  = 1200;   // 2 h cumulative
 const XP_ADULT_TO_RETIRE = 3000;  // 5 h cumulative
 
 const PET_SPECIES_DATA: Record<Pet['species'], Record<Pet['evolution_stage'], string>> = {
-  bird:   { egg: '/pets/bird_egg.png',   baby: '/pets/bird_baby.png',   adult: '/pets/bird_adult.png'   },
-  cat:    { egg: '/pets/cat_egg.png',    baby: '/pets/cat_baby.png',    adult: '/pets/cat_adult.png'    },
-  dragon: { egg: '/pets/dragon_egg.png', baby: '/pets/dragon_baby.png', adult: '/pets/dragon_adult.png' },
-  robot:  { egg: '/pets/robot_egg.png',  baby: '/pets/robot_baby.png',  adult: '/pets/robot_adult.png'  },
-  ocean:  { egg: '/pets/ocean_egg.png',  baby: '/pets/ocean_baby.png',  adult: '/pets/ocean_adult.png'  },
+  bird:   { egg: '/pets/bird_egg.svg',   baby: '/pets/bird_baby.svg',   adult: '/pets/bird_adult.svg'   },
+  cat:    { egg: '/pets/cat_egg.svg',    baby: '/pets/cat_baby.svg',    adult: '/pets/cat_adult.svg'    },
+  dragon: { egg: '/pets/dragon_egg.svg', baby: '/pets/dragon_baby.svg', adult: '/pets/dragon_adult.svg' },
+  robot:  { egg: '/pets/robot_egg.svg',  baby: '/pets/robot_baby.svg',  adult: '/pets/robot_adult.svg'  },
+  ocean:  { egg: '/pets/ocean_egg.svg',  baby: '/pets/ocean_baby.svg',  adult: '/pets/ocean_adult.svg'  },
 };
 
 function getPetImage(pet: Pet | null | undefined): string {
-  if (!pet) return '/pets/dragon_egg.png';
+  if (!pet) return '/pets/dragon_egg.svg';
   const species = pet.species || 'dragon';
   return PET_SPECIES_DATA[species][pet.evolution_stage];
 }
@@ -139,7 +139,7 @@ function PetDisplay({ pet, size = 80, className = '', isHappy = false, isDead = 
         whileTap={{ scale: 0.9, scaleY: 0.8 }}
         className="relative z-10 cursor-pointer"
       >
-        <Image 
+        <Image unoptimized
           src={getPetImage(pet)} 
           alt={pet?.name ?? 'Pet'} 
           width={size} 
