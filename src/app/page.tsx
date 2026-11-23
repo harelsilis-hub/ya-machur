@@ -57,6 +57,39 @@ const XP_EGG_TO_BABY    = 300;    // 30 min focus
 const XP_BABY_TO_ADULT  = 1200;   // 2 h cumulative
 const XP_ADULT_TO_RETIRE = 3000;  // 5 h cumulative
 
+// Soft three-note chime synthesized with Web Audio (no asset needed).
+let audioCtx: AudioContext | null = null;
+function getAudioCtx(): AudioContext | null {
+  if (typeof window === 'undefined') return null;
+  if (!audioCtx) {
+    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctor) return null;
+    audioCtx = new Ctor();
+  }
+  return audioCtx;
+}
+function playChime() {
+  try {
+    const ctx = getAudioCtx();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') void ctx.resume();
+    const t0 = ctx.currentTime;
+    [523.25, 659.25, 783.99].forEach((freq, i) => { // C5 E5 G5
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const start = t0 + i * 0.22;
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.25, start + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 1.2);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 1.3);
+    });
+  } catch { /* audio unavailable */ }
+}
+
 const PET_SPECIES_DATA: Record<Pet['species'], Record<Pet['evolution_stage'], string>> = {
   bird:   { egg: '/pets/bird_egg.svg',   baby: '/pets/bird_baby.svg',   adult: '/pets/bird_adult.svg'   },
   cat:    { egg: '/pets/cat_egg.svg',    baby: '/pets/cat_baby.svg',    adult: '/pets/cat_adult.svg'    },
@@ -597,6 +630,14 @@ export default function Home() {
 
   const transitioningRef = useRef(false);
 
+  // Browsers block audio until a user gesture; unlock on first interaction.
+  useEffect(() => {
+    const unlock = () => { const c = getAudioCtx(); if (c?.state === 'suspended') void c.resume(); };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    window.addEventListener('keydown', unlock, { once: true });
+    return () => { window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock); };
+  }, []);
+
   useEffect(() => {
     if (!user || tamagotchiSession) return;
     const isTama = activeSession?.mode === 'tamagotchi' || activeSession?.mode === 'tamagotchi_pomodoro';
@@ -626,6 +667,7 @@ export default function Home() {
       const session = stateRef.current?.activeSession;
       if (session?.endTime && currentNow >= session.endTime && !transitioningRef.current && user) {
         transitioningRef.current = true;
+        playChime();
         apiFetch('/api/task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
