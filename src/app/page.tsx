@@ -68,7 +68,11 @@ function getAudioCtx(): AudioContext | null {
   }
   return audioCtx;
 }
+let lastChime = 0;
 function playChime() {
+  const nowMs = Date.now();
+  if (nowMs - lastChime < 3000) return; // dedupe tick + phase-change triggers
+  lastChime = nowMs;
   try {
     const ctx = getAudioCtx();
     if (!ctx) return;
@@ -81,7 +85,7 @@ function playChime() {
       osc.frequency.value = freq;
       const start = t0 + i * 0.22;
       gain.gain.setValueAtTime(0.0001, start);
-      gain.gain.exponentialRampToValueAtTime(0.25, start + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.5, start + 0.03);
       gain.gain.exponentialRampToValueAtTime(0.0001, start + 1.2);
       osc.connect(gain).connect(ctx.destination);
       osc.start(start);
@@ -630,11 +634,19 @@ export default function Home() {
 
   const transitioningRef = useRef(false);
 
+  // Also chime when the phase flips for any reason (e.g. server-side transition picked up by polling)
+  const prevPhaseRef = useRef<string | null>(null);
+  useEffect(() => {
+    const phase = activeSession?.endTime ? activeSession.phase : null;
+    if (prevPhaseRef.current && phase && phase !== prevPhaseRef.current) playChime();
+    prevPhaseRef.current = phase;
+  }, [activeSession]);
+
   // Browsers block audio until a user gesture; unlock on first interaction.
   useEffect(() => {
     const unlock = () => { const c = getAudioCtx(); if (c?.state === 'suspended') void c.resume(); };
-    window.addEventListener('pointerdown', unlock, { once: true });
-    window.addEventListener('keydown', unlock, { once: true });
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
     return () => { window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock); };
   }, []);
 
@@ -876,6 +888,7 @@ export default function Home() {
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <p className="text-neutral-400 font-medium text-sm">Focus dashboard</p>
                 <Link href="/setup" className="btn-secondary px-3 py-1 rounded-md text-xs font-medium transition-colors">Setup</Link>
+                <button onClick={() => { lastChime = 0; playChime(); }} className="btn-secondary px-3 py-1 rounded-md text-xs font-medium transition-colors">🔔 Test sound</button>
                 <button onClick={handleLogout} className="btn-secondary px-3 py-1 rounded-md text-xs font-medium transition-colors">Sign out</button>
               </div>
             </div>
