@@ -888,7 +888,6 @@ export default function Home() {
               <div className="flex flex-wrap items-center justify-center gap-3">
                 <p className="text-neutral-400 font-medium text-sm">Focus dashboard</p>
                 <Link href="/setup" className="btn-secondary px-3 py-1 rounded-md text-xs font-medium transition-colors">Setup</Link>
-                <button onClick={() => { lastChime = 0; playChime(); }} className="btn-secondary px-3 py-1 rounded-md text-xs font-medium transition-colors">🔔 Test sound</button>
                 <button onClick={handleLogout} className="btn-secondary px-3 py-1 rounded-md text-xs font-medium transition-colors">Sign out</button>
               </div>
             </div>
