@@ -9,6 +9,7 @@ import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrate
 import { motion, AnimatePresence } from 'framer-motion';
 import { CSS } from '@dnd-kit/utilities';
 import type { User } from '@supabase/supabase-js';
+import { focusMsAt, isTimedMode, phaseDuration } from '@/lib/session';
 
 // ─────────────────────────────────────────────
 // Types
@@ -39,12 +40,9 @@ type ActiveSession = {
   taskName: string;
   mode: 'infinite' | 'pomodoro' | 'tamagotchi' | 'tamagotchi_pomodoro';
   phase: 'work' | 'break';
-  endTime: number | null;
-};
-
-type TamagotchiSession = {
-  startTime: number;
-  potentialXP: number;
+  endTime: number | null;   // null on a timed session = waiting for the user to press Start
+  focusMs?: number;         // focus banked from completed work phases (synced via server)
+  startedAt?: number | null;
 };
 
 type HonorModalState = 'hidden' | 'asking' | 'focused_success' | 'broke_death' | 'retired' | 'evolved';
@@ -132,6 +130,14 @@ function writeSessionStart(userId: string, t: number | null) {
   } catch { /* storage unavailable */ }
 }
 const xpForElapsed = (ms: number) => Math.floor(Math.max(0, ms) * XP_PER_SECOND / 1000);
+
+// If the DB migration adding session_started_at hasn't run, fall back to a per-device start time.
+function normalizeSession(s: ActiveSession | null, userId: string): ActiveSession | null {
+  if (!s || s.startedAt || s.mode !== 'tamagotchi') return s;
+  const startedAt = readSessionStart(userId) ?? Date.now();
+  writeSessionStart(userId, startedAt);
+  return { ...s, startedAt };
+}
 
 // Deterministic "random" spread so render stays pure and sparkles don't jump on re-render
 const spread = (i: number, mod: number) => ((i * 37 + 11) % mod) / mod;
@@ -555,7 +561,6 @@ export default function Home() {
 
   const [activePet, setActivePet] = useState<Pet | null>(null);
   const [retiredPets, setRetiredPets] = useState<Pet[]>([]);
-  const [tamagotchiSession, setTamagotchiSession] = useState<TamagotchiSession | null>(null);
   const [modalState, setModalState] = useState<HonorModalState>('hidden');
   const [resolving, setResolving] = useState(false);
   const [shakeKey, setShakeKey] = useState(0);
@@ -596,7 +601,7 @@ export default function Home() {
 
       if (taskRes.ok) {
         const data = await taskRes.json();
-        if (!tamagotchiSession) setActiveSession(data.activeSession);
+        setActiveSession(normalizeSession(data.activeSession, user.id));
       }
 
       if (petRes.ok) {
@@ -617,7 +622,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [user, tamagotchiSession]);
+  }, [user]);
 
   useEffect(() => {
     if (user) {
@@ -634,12 +639,13 @@ export default function Home() {
 
   const transitioningRef = useRef(false);
 
-  // Also chime when the phase flips for any reason (e.g. server-side transition picked up by polling)
-  const prevPhaseRef = useRef<string | null>(null);
+  // Also chime when a running phase ends for any reason (e.g. another device's transition picked up by polling)
+  const prevRunningRef = useRef(false);
   useEffect(() => {
-    const phase = activeSession?.endTime ? activeSession.phase : null;
-    if (prevPhaseRef.current && phase && phase !== prevPhaseRef.current) playChime();
-    prevPhaseRef.current = phase;
+    const running = !!activeSession?.endTime;
+    const waiting = !!activeSession && isTimedMode(activeSession.mode) && !activeSession.endTime;
+    if (prevRunningRef.current && waiting) playChime();
+    prevRunningRef.current = running;
   }, [activeSession]);
 
   // Browsers block audio until a user gesture; unlock on first interaction.
@@ -650,31 +656,15 @@ export default function Home() {
     return () => { window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock); };
   }, []);
 
+  // Server says there's no session: drop any stale local fallback start time
   useEffect(() => {
-    if (!user || tamagotchiSession) return;
-    const isTama = activeSession?.mode === 'tamagotchi' || activeSession?.mode === 'tamagotchi_pomodoro';
-    if (isTama) {
-      // Restore after a reload instead of resetting the session to 0 XP
-      const startTime = readSessionStart(user.id) ?? Date.now();
-      writeSessionStart(user.id, startTime);
-      setTamagotchiSession({ startTime, potentialXP: xpForElapsed(Date.now() - startTime) });
-    } else if (activeSession === null && !loading) {
-      writeSessionStart(user.id, null); // server says no session: drop stale local start
-    }
-  }, [activeSession, tamagotchiSession, user, loading]);
+    if (user && activeSession === null && !loading) writeSessionStart(user.id, null);
+  }, [activeSession, user, loading]);
 
   useEffect(() => {
     const timerInterval = setInterval(() => {
       const currentNow = Date.now();
       setNow(currentNow);
-
-      setTamagotchiSession(prev => {
-        if (!prev) return prev;
-        const elapsed = Math.max(0, currentNow - prev.startTime);
-        const newXP = xpForElapsed(elapsed);
-        if (newXP > prev.potentialXP) setHappyKey(k => k + 1); 
-        return { ...prev, potentialXP: newXP };
-      });
 
       const session = stateRef.current?.activeSession;
       if (session?.endTime && currentNow >= session.endTime && !transitioningRef.current && user) {
@@ -685,27 +675,47 @@ export default function Home() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'transition_timer', userId: user.id }),
         }).then(res => res.json()).then(data => {
-          setActiveSession(data.activeSession);
+          setActiveSession(normalizeSession(data.activeSession, user.id));
         }).finally(() => { transitioningRef.current = false; });
       }
     }, 1000);
     return () => clearInterval(timerInterval);
   }, [user]);
 
+  const isTamaSession = activeSession?.mode === 'tamagotchi' || activeSession?.mode === 'tamagotchi_pomodoro';
+  const focusMs = activeSession ? focusMsAt(activeSession, now) : 0;
+  const potentialXP = isTamaSession ? xpForElapsed(focusMs) : 0;
+
+  // Bounce the pet whenever XP ticks up
+  const prevXpRef = useRef(0);
   useEffect(() => {
-    if (!tamagotchiSession) { document.title = 'Ya Machur'; return; }
-    const left = activeSession?.endTime ? Math.max(0, Math.floor((activeSession.endTime - now) / 1000)) : null;
-    const s = left ?? Math.floor((now - tamagotchiSession.startTime) / 1000);
-    const mm = Math.floor(s / 60).toString().padStart(2, '0');
-    document.title = `${mm}:${(s % 60).toString().padStart(2, '0')} · +${tamagotchiSession.potentialXP} XP · Ya Machur`;
-  }, [tamagotchiSession, activeSession, now]);
+    if (potentialXP > prevXpRef.current && prevXpRef.current > 0) setHappyKey(k => k + 1);
+    prevXpRef.current = potentialXP;
+  }, [potentialXP]);
+
+  // Another device ended the session while the honor modal was open here
+  useEffect(() => {
+    if (!activeSession && modalState === 'asking') setModalState('hidden');
+  }, [activeSession, modalState]);
 
   useEffect(() => {
-    if (!tamagotchiSession) return;
+    if (!activeSession) { document.title = 'Ya Machur'; return; }
+    const waiting = isTimedMode(activeSession.mode) && !activeSession.endTime;
+    let label: string;
+    if (waiting) label = activeSession.phase === 'break' ? 'Break ready' : 'Focus ready';
+    else {
+      const s = activeSession.endTime ? Math.max(0, Math.floor((activeSession.endTime - now) / 1000)) : Math.floor(focusMs / 1000);
+      label = `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
+    }
+    document.title = `${label}${isTamaSession ? ` · +${potentialXP} XP` : ''} · Ya Machur`;
+  }, [activeSession, now, focusMs, potentialXP, isTamaSession]);
+
+  useEffect(() => {
+    if (!isTamaSession) return;
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [tamagotchiSession]);
+  }, [isTamaSession]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -729,7 +739,7 @@ export default function Home() {
     if (!user) return;
     setLoading(true);
     try {
-      if (['start_session', 'stop_session', 'transition_timer'].includes(payload.action)) {
+      if (['start_session', 'stop_session', 'transition_timer', 'start_phase', 'skip_break'].includes(payload.action)) {
         await apiFetch('/api/task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -755,7 +765,7 @@ export default function Home() {
   };
 
   const handleStartTamagotchi = async (mode: 'infinite' | 'pomodoro' = 'infinite') => {
-    if (!user || tamagotchiSession) return;
+    if (!user || activeSession) return;
     setLoading(true);
     try {
       const nameToSave = customPetName.trim();
@@ -769,14 +779,16 @@ export default function Home() {
       setCustomPetName('');
       const startTime = Date.now();
       writeSessionStart(user.id, startTime);
-      setTamagotchiSession({ startTime, potentialXP: 0 });
       setActiveSession({
         taskId: null,
         taskName: mode === 'pomodoro' ? 'Pomodoro 50/10' : 'Tamagotchi Session',
         mode: mode === 'pomodoro' ? 'tamagotchi_pomodoro' : 'tamagotchi',
         phase: 'work',
-        endTime: mode === 'pomodoro' ? Date.now() + 50 * 60 * 1000 : null,
+        endTime: mode === 'pomodoro' ? startTime + phaseDuration('tamagotchi_pomodoro', 'work') : null,
+        focusMs: 0,
+        startedAt: startTime,
       });
+      await fetchState(); // pick up the server's exact times
     } catch (e) {
       console.error(e);
     } finally {
@@ -792,12 +804,12 @@ export default function Home() {
     await supabase.from('pets').update({ name }).eq('id', activePet.id).eq('user_id', user.id);
   };
 
-  const handleRequestStop = () => { if (tamagotchiSession) setModalState('asking'); };
+  const handleRequestStop = () => { if (isTamaSession) setModalState('asking'); };
 
   const handleVerdict = async (verdict: 'focused' | 'broke') => {
-    if (!user || !tamagotchiSession || resolving) return;
+    if (!user || !isTamaSession || resolving) return;
     setResolving(true);
-    const potentialXp = tamagotchiSession.potentialXP;
+    const potentialXp = potentialXP;
     try {
       const res = await apiFetch('/api/pet', {
         method: 'POST',
@@ -806,7 +818,6 @@ export default function Home() {
       });
       const data = await res.json();
       writeSessionStart(user.id, null);
-      setTamagotchiSession(null);
       setActiveSession(null);
       if (verdict === 'broke') {
         setModalState('broke_death');
@@ -860,23 +871,20 @@ export default function Home() {
 
   const isPomodoro = activeSession?.mode === 'pomodoro';
   const isBreak = activeSession?.phase === 'break';
-  const isTamagotchi = activeSession?.mode === 'tamagotchi' || activeSession?.mode === 'tamagotchi_pomodoro';
-  const elapsedSeconds = tamagotchiSession ? Math.floor((now - tamagotchiSession.startTime) / 1000) : 0;
+  const isTamagotchi = isTamaSession;
+  const isWaiting = !!activeSession && isTimedMode(activeSession.mode) && !activeSession.endTime;
+  const elapsedSeconds = Math.floor(focusMs / 1000);
+  const breakMinutes = activeSession ? Math.round(phaseDuration(activeSession.mode, 'break') / 60000) : 0;
+  const workMinutes = activeSession ? Math.round(phaseDuration(activeSession.mode, 'work') / 60000) : 0;
+  const endSession = isTamagotchi ? handleRequestStop : () => action({ action: 'stop_session' });
 
   return (
     <>
-      <HonorModal modalState={modalState} potentialXP={tamagotchiSession?.potentialXP ?? 0} activePet={activePet} onFocused={() => handleVerdict('focused')} onBroke={() => handleVerdict('broke')} resolving={resolving} />
+      <HonorModal modalState={modalState} potentialXP={potentialXP} activePet={activePet} onFocused={() => handleVerdict('focused')} onBroke={() => handleVerdict('broke')} resolving={resolving} />
 
       <main className={`flex min-h-screen items-center justify-center px-6 py-12 transition-all duration-1000 overflow-y-auto ${
         'bg-glass-scene text-white'
       }`}>
-
-        {activeSession && isTamagotchi && !tamagotchiSession && (
-          <div className="flex flex-col items-center gap-4">
-            <div className="text-sm font-medium text-neutral-400">Restoring your session…</div>
-            <button onClick={() => action({ action: 'stop_session' })} className="btn-secondary px-4 py-2 rounded-lg text-sm font-medium">Cancel session</button>
-          </div>
-        )}
 
         {!activeSession && (
           <div className="w-full max-w-3xl transform scale-100 opacity-100 transition-all">
@@ -976,7 +984,7 @@ export default function Home() {
           </div>
         )}
 
-        {isTamagotchi && tamagotchiSession && !isBreak && (
+        {activeSession && isTamagotchi && !isBreak && !isWaiting && (
           <div className="w-full max-w-lg text-center space-y-10">
             <div className="relative flex items-center justify-center py-6">
               <div className="absolute inset-0 flex items-center justify-center">
@@ -1001,15 +1009,37 @@ export default function Home() {
                   ? calculateTimeLeft(activeSession.endTime)
                   : formatElapsed(elapsedSeconds)}
               </div>
-              <div className="gradient-text font-black text-2xl md:text-3xl">+{tamagotchiSession.potentialXP.toLocaleString()} XP</div>
+              <div className="gradient-text font-black text-2xl md:text-3xl">+{potentialXP.toLocaleString()} XP</div>
               <div className="text-xs text-neutral-400 font-medium">XP earned this session</div>
             </div>
-            <div className="px-4 w-full max-w-xs mx-auto"><XPBar pet={activePet} potentialXp={tamagotchiSession.potentialXP} /></div>
+            <div className="px-4 w-full max-w-xs mx-auto"><XPBar pet={activePet} potentialXp={potentialXP} /></div>
             <button onClick={handleRequestStop} disabled={resolving} className="w-full btn-primary font-semibold text-lg px-12 py-4 rounded-xl text-white"><span className="relative z-10">End session</span></button>
           </div>
         )}
 
-        {activeSession && (isBreak || !isTamagotchi) && (
+        {activeSession && isWaiting && (
+          <div className="w-full max-w-lg text-center space-y-10">
+            {isTamagotchi && <div className="flex justify-center"><PetDisplay pet={activePet} size={140} isHappy={isBreak} /></div>}
+            <div className="space-y-4">
+              <h2 className="font-black text-4xl md:text-6xl text-white">{isBreak ? 'Time for a break' : 'Back to learning'}</h2>
+              <p className="text-neutral-400 text-base md:text-lg">
+                {isBreak
+                  ? `Focus block done. Start your ${breakMinutes}-minute break when you're ready.`
+                  : `Break's over. Start the next ${workMinutes}-minute focus block when you're ready.`}
+              </p>
+              {isTamagotchi && <div className="gradient-text font-black text-2xl">+{potentialXP.toLocaleString()} XP so far</div>}
+            </div>
+            <div className="flex flex-col items-center gap-4">
+              <button onClick={() => action({ action: 'start_phase' })} disabled={loading} className="w-full btn-primary font-black text-xl px-12 py-5 rounded-2xl text-white disabled:opacity-50">
+                {isBreak ? 'Start break' : 'Start focus'}
+              </button>
+              {isBreak && <button onClick={() => action({ action: 'skip_break' })} disabled={loading} className="w-full btn-secondary font-bold text-lg px-12 py-4 rounded-2xl">Skip break, keep focusing</button>}
+              <button onClick={endSession} disabled={resolving} className="text-neutral-500 hover:text-white transition-colors text-sm font-medium uppercase tracking-widest pt-2">End session</button>
+            </div>
+          </div>
+        )}
+
+        {activeSession && !isWaiting && (isBreak || !isTamagotchi) && (
           <div className="w-full max-w-5xl text-center space-y-12">
             {isBreak ? (
               <div className="space-y-8"><h2 className="font-bold text-5xl md:text-7xl text-neutral-400">Break time</h2><div className="tabular-nums font-black text-6xl md:text-8xl text-white/90">{calculateTimeLeft(activeSession.endTime)}</div></div>
@@ -1018,9 +1048,18 @@ export default function Home() {
                 {isPomodoro && <div className="tabular-nums font-black py-8 text-[6rem] md:text-[12rem] text-white drop-shadow-lg">{calculateTimeLeft(activeSession.endTime)}</div>}
               </>
             )}
-            <div className="flex flex-col items-center gap-8 pt-8">
-              <button onClick={isTamagotchi ? handleRequestStop : () => action({ action: 'stop_session' })} className={`font-black text-xl md:text-3xl px-12 py-6 rounded-2xl transition-all ${isBreak ? 'btn-secondary' : 'btn-danger'}`}><span className="relative z-10">{isBreak && isTamagotchi ? 'End session' : isBreak ? 'Skip break' : 'Finish'}</span></button>
-              {!isBreak && <button onClick={() => action({ action: 'stop_session' })} className="text-neutral-500 hover:text-white transition-colors text-sm font-medium uppercase tracking-widest">Cancel</button>}
+            <div className="flex flex-col items-center gap-6 pt-8">
+              {isBreak ? (
+                <>
+                  <button onClick={() => action({ action: 'skip_break' })} disabled={loading} className="font-black text-xl md:text-3xl px-12 py-6 rounded-2xl transition-all btn-secondary">Skip break</button>
+                  <button onClick={endSession} disabled={resolving} className="text-neutral-500 hover:text-white transition-colors text-sm font-medium uppercase tracking-widest">End session</button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => action({ action: 'stop_session' })} className="font-black text-xl md:text-3xl px-12 py-6 rounded-2xl transition-all btn-danger"><span className="relative z-10">Finish</span></button>
+                  <button onClick={() => action({ action: 'stop_session' })} className="text-neutral-500 hover:text-white transition-colors text-sm font-medium uppercase tracking-widest">Cancel</button>
+                </>
+              )}
             </div>
           </div>
         )}

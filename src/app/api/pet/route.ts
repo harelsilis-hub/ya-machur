@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getSupabaseServer } from '@/lib/supabase';
+import { phaseDuration } from '@/lib/session';
+import { schedulePhaseEnd, cancelPhaseEnd } from '@/lib/notify';
+import { upsertSettings, CLEARED_SESSION } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,16 +93,20 @@ export async function POST(req: Request) {
   // ----------------------------------------------------------------
   if (action === 'start_tamagotchi') {
     const isPomo = mode === 'pomodoro';
+    const now = Date.now();
+    const endTime = isPomo ? now + phaseDuration('tamagotchi_pomodoro', 'work') : null;
     // Activate session in settings table (this blocks the iPhone)
-    await supabase.from('settings').upsert({
-      user_id: userId,
+    await upsertSettings(supabase, userId, {
       is_active: true,
       active_task_id: null,
       active_task_name: isPomo ? 'Pomodoro 50/10' : 'Tamagotchi Session',
       session_mode: isPomo ? 'tamagotchi_pomodoro' : 'tamagotchi',
       session_phase: 'work',
-      session_end_time: isPomo ? Date.now() + 50 * 60 * 1000 : null,
-    }, { onConflict: 'user_id' });
+      session_end_time: endTime,
+      session_focus_ms: 0,
+      session_started_at: now,
+    });
+    if (endTime) await schedulePhaseEnd(userId, 'work', endTime, new URL(req.url).origin);
 
     // Ensure there is an active pet
     const { data: existing } = await supabase
@@ -152,16 +159,10 @@ export async function POST(req: Request) {
   // potentialXp: number (minutes elapsed, calculated on frontend)
   // ----------------------------------------------------------------
   if (action === 'resolve_session') {
-    // Always unlock the phone first
-    await supabase.from('settings').upsert({
-      user_id: userId,
-      is_active: false,
-      active_task_id: null,
-      active_task_name: null,
-      session_mode: null,
-      session_phase: null,
-      session_end_time: null,
-    }, { onConflict: 'user_id' });
+    // Always unlock the phone first, and cancel any pending phase-end notification
+    const { data: current } = await supabase.from('settings').select('session_end_time').eq('user_id', userId).single();
+    await cancelPhaseEnd(userId, current?.session_end_time);
+    await upsertSettings(supabase, userId, CLEARED_SESSION);
 
     // Fetch the active pet
     const { data: pet } = await supabase

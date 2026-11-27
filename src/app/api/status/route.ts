@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 
   const { data: settings } = await supabase
     .from('settings')
-    .select('is_active, session_phase, session_end_time')
+    .select('is_active, session_mode, session_phase, session_end_time')
     .eq('user_id', userId)
     .single();
 
@@ -27,14 +27,13 @@ export async function GET(req: Request) {
   // This allows the iPhone check to perfectly align precisely without backend interval engine loop running
   let isActive = false;
   
-  if (settings.session_phase === 'work') {
+  if (settings.is_active && settings.session_phase === 'work') {
     if (settings.session_end_time) {
-      if (Date.now() < Number(settings.session_end_time)) {
-        isActive = true;
-      }
+      // Running focus block
+      isActive = Date.now() < Number(settings.session_end_time);
     } else {
-      // Infinite mode has no endTime but remains active indefinitely
-      isActive = true;
+      // Open-ended modes stay active; timed modes with no end time are waiting for Start
+      isActive = settings.session_mode !== 'pomodoro' && settings.session_mode !== 'tamagotchi_pomodoro';
     }
   }
 

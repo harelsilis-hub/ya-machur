@@ -3,9 +3,11 @@
 import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import { NTFY_SERVER, ntfyTopic } from '@/lib/session';
 
 export default function SetupGuide() {
   const [copied, setCopied] = useState(false);
+  const [topicCopied, setTopicCopied] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -15,6 +17,14 @@ export default function SetupGuide() {
   }, []);
 
   const apiUrl = `https://ya-machur.vercel.app/api/status?userId=${userId || 'YOUR_ACCOUNT_ID'}`;
+
+  const topic = userId ? ntfyTopic(userId) : 'sign in first';
+  const copyTopic = () => {
+    if (!userId) return;
+    navigator.clipboard.writeText(topic);
+    setTopicCopied(true);
+    setTimeout(() => setTopicCopied(false), 2000);
+  };
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(apiUrl);
@@ -28,7 +38,7 @@ export default function SetupGuide() {
         <div className="mb-12">
           <Link href="/" className="text-neutral-500 hover:text-white transition-colors text-sm uppercase tracking-widest font-bold mb-8 inline-block">&larr; Back to Dashboard</Link>
           <h1 className="text-4xl md:text-6xl font-black tracking-tight mb-4">Setup Guide</h1>
-          <p className="text-neutral-400 text-lg">Follow these 4 steps to permanently lock in your focus protocol.</p>
+          <p className="text-neutral-400 text-lg">Follow these 5 steps to permanently lock in your focus protocol.</p>
         </div>
 
         <div className="space-y-6">
@@ -96,6 +106,40 @@ export default function SetupGuide() {
               <li>Toggle <strong className="text-white">OFF</strong> &quot;Notify When Run&quot; (to keep it silent).</li>
               <li>Action: Select &quot;Run Shortcut&quot; -&gt; &quot;Ya Machur&quot;.</li>
             </ul>
+          </div>
+
+          {/* Step 5 */}
+          <div className="bg-neutral-900 border border-neutral-800 rounded-2xl p-6 md:p-8">
+            <div className="text-brand-neon font-bold tracking-widest text-sm uppercase mb-2">Step 5</div>
+            <h2 className="text-2xl font-black mb-3">Get Timer Notifications on Your Phone</h2>
+            <p className="text-neutral-400 mb-4">
+              When a Pomodoro focus block ends you&apos;ll get <strong className="text-white">&quot;Time for a break&quot;</strong>, and when the break ends,
+              <strong className="text-white"> &quot;Back to learning&quot;</strong>. They arrive even when the app is closed.
+            </p>
+            <ul className="list-disc pl-5 space-y-2 text-neutral-400 mb-6">
+              <li>Install the free <strong className="text-white">ntfy</strong> app (App Store / Google Play) and allow notifications.</li>
+              <li>Tap <strong className="text-white">+</strong> to subscribe to a topic and paste the topic name below.</li>
+            </ul>
+            <div className="flex flex-col md:flex-row gap-3">
+              <input
+                type="text"
+                readOnly
+                value={topic}
+                className="flex-1 bg-black border border-neutral-800 rounded-xl px-4 py-4 text-neutral-300 font-mono text-xs md:text-sm focus:outline-none"
+              />
+              <button
+                onClick={copyTopic}
+                disabled={!userId}
+                className={`px-6 py-4 rounded-xl font-bold uppercase tracking-wider text-sm transition-all shrink-0 ${
+                  topicCopied ? 'bg-green-500 text-black' : 'bg-neutral-800 text-white hover:bg-neutral-700'
+                }`}
+              >
+                {topicCopied ? 'Copied!' : 'Copy Topic'}
+              </button>
+            </div>
+            {NTFY_SERVER !== 'https://ntfy.sh' && (
+              <p className="text-neutral-500 text-xs mt-3">Server: {NTFY_SERVER}</p>
+            )}
           </div>
         </div>
       </div>
