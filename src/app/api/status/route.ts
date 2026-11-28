@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 
   const { data: settings } = await supabase
     .from('settings')
-    .select('is_active, session_mode, session_phase, session_end_time')
+    .select('*')
     .eq('user_id', userId)
     .single();
 
@@ -27,7 +27,7 @@ export async function GET(req: Request) {
   // This allows the iPhone check to perfectly align precisely without backend interval engine loop running
   let isActive = false;
   
-  if (settings.is_active && settings.session_phase === 'work') {
+  if (settings.is_active && settings.session_phase === 'work' && !settings.session_paused_at) {
     if (settings.session_end_time) {
       // Running focus block
       isActive = Date.now() < Number(settings.session_end_time);

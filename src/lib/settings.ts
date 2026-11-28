@@ -3,12 +3,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 // Columns added by supabase/migrations/20261127_session_sync.sql. If that migration
 // hasn't been run yet, writes are retried without them so the app keeps working
 // (cross-device XP sync is then unavailable until the columns exist).
-const NEW_COLUMNS = ['session_focus_ms', 'session_started_at'] as const;
+const NEW_COLUMNS = ['session_focus_ms', 'session_started_at', 'session_paused_at'] as const;
 
 type Fields = Record<string, unknown>;
 
 const missingColumn = (error: { code?: string; message?: string } | null) =>
-  !!error && (error.code === 'PGRST204' || /session_(focus_ms|started_at)/.test(error.message ?? ''));
+  !!error && (error.code === 'PGRST204' || /session_(focus_ms|started_at|paused_at)/.test(error.message ?? ''));
 
 const stripNew = (f: Fields) => {
   const copy = { ...f };
@@ -49,4 +49,5 @@ export const CLEARED_SESSION: Fields = {
   session_end_time: null,
   session_focus_ms: 0,
   session_started_at: null,
+  session_paused_at: null,
 };

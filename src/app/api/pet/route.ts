@@ -105,6 +105,7 @@ export async function POST(req: Request) {
       session_end_time: endTime,
       session_focus_ms: 0,
       session_started_at: now,
+      session_paused_at: null,
     });
     if (endTime) await schedulePhaseEnd(userId, 'work', endTime, new URL(req.url).origin);
 

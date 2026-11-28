@@ -9,7 +9,7 @@ import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrate
 import { motion, AnimatePresence } from 'framer-motion';
 import { CSS } from '@dnd-kit/utilities';
 import type { User } from '@supabase/supabase-js';
-import { focusMsAt, isTimedMode, phaseDuration } from '@/lib/session';
+import { effectiveNow, focusMsAt, isTimedMode, phaseDuration } from '@/lib/session';
 
 // ─────────────────────────────────────────────
 // Types
@@ -43,6 +43,7 @@ type ActiveSession = {
   endTime: number | null;   // null on a timed session = waiting for the user to press Start
   focusMs?: number;         // focus banked from completed work phases (synced via server)
   startedAt?: number | null;
+  pausedAt?: number | null; // set while paused (clock frozen at this moment)
 };
 
 type HonorModalState = 'hidden' | 'asking' | 'focused_success' | 'broke_death' | 'retired' | 'evolved';
@@ -667,7 +668,7 @@ export default function Home() {
       setNow(currentNow);
 
       const session = stateRef.current?.activeSession;
-      if (session?.endTime && currentNow >= session.endTime && !transitioningRef.current && user) {
+      if (session?.endTime && !session.pausedAt && currentNow >= session.endTime && !transitioningRef.current && user) {
         transitioningRef.current = true;
         playChime();
         apiFetch('/api/task', {
@@ -703,6 +704,7 @@ export default function Home() {
     const waiting = isTimedMode(activeSession.mode) && !activeSession.endTime;
     let label: string;
     if (waiting) label = activeSession.phase === 'break' ? 'Break ready' : 'Focus ready';
+    else if (activeSession.pausedAt) label = 'Paused';
     else {
       const s = activeSession.endTime ? Math.max(0, Math.floor((activeSession.endTime - now) / 1000)) : Math.floor(focusMs / 1000);
       label = `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
@@ -739,7 +741,7 @@ export default function Home() {
     if (!user) return;
     setLoading(true);
     try {
-      if (['start_session', 'stop_session', 'transition_timer', 'start_phase', 'skip_break'].includes(payload.action)) {
+      if (['start_session', 'stop_session', 'transition_timer', 'start_phase', 'skip_break', 'pause_session', 'resume_session'].includes(payload.action)) {
         await apiFetch('/api/task', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -856,7 +858,7 @@ export default function Home() {
 
   const calculateTimeLeft = (endTime: number | null) => {
     if (!endTime) return '';
-    const diff = endTime - now;
+    const diff = endTime - (activeSession ? effectiveNow(activeSession, now) : now);
     if (diff <= 0) return '00:00';
     const totalSeconds = Math.floor(diff / 1000);
     const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -876,6 +878,19 @@ export default function Home() {
   const elapsedSeconds = Math.floor(focusMs / 1000);
   const breakMinutes = activeSession ? Math.round(phaseDuration(activeSession.mode, 'break') / 60000) : 0;
   const workMinutes = activeSession ? Math.round(phaseDuration(activeSession.mode, 'work') / 60000) : 0;
+  const isPaused = !!activeSession?.pausedAt;
+  const pauseButton = activeSession && !isWaiting ? (
+    <button
+      onClick={() => action({ action: isPaused ? 'resume_session' : 'pause_session' })}
+      disabled={loading}
+      className="btn-secondary font-bold text-lg px-12 py-4 rounded-2xl disabled:opacity-50"
+    >
+      {isPaused ? 'Resume' : 'Pause'}
+    </button>
+  ) : null;
+  const pausedBadge = isPaused ? (
+    <div className="inline-block glass-card px-4 py-1 rounded-full text-xs uppercase tracking-widest font-bold text-glass-cyan">Paused</div>
+  ) : null;
   const endSession = isTamagotchi ? handleRequestStop : () => action({ action: 'stop_session' });
 
   return (
@@ -1013,6 +1028,8 @@ export default function Home() {
               <div className="text-xs text-neutral-400 font-medium">XP earned this session</div>
             </div>
             <div className="px-4 w-full max-w-xs mx-auto"><XPBar pet={activePet} potentialXp={potentialXP} /></div>
+            {pausedBadge}
+            <div className="flex flex-col items-center gap-4">{pauseButton}</div>
             <button onClick={handleRequestStop} disabled={resolving} className="w-full btn-primary font-semibold text-lg px-12 py-4 rounded-xl text-white"><span className="relative z-10">End session</span></button>
           </div>
         )}
@@ -1051,11 +1068,15 @@ export default function Home() {
             <div className="flex flex-col items-center gap-6 pt-8">
               {isBreak ? (
                 <>
+                  {pausedBadge}
+                  {pauseButton}
                   <button onClick={() => action({ action: 'skip_break' })} disabled={loading} className="font-black text-xl md:text-3xl px-12 py-6 rounded-2xl transition-all btn-secondary">Skip break</button>
                   <button onClick={endSession} disabled={resolving} className="text-neutral-500 hover:text-white transition-colors text-sm font-medium uppercase tracking-widest">End session</button>
                 </>
               ) : (
                 <>
+                  {pausedBadge}
+                  {pauseButton}
                   <button onClick={() => action({ action: 'stop_session' })} className="font-black text-xl md:text-3xl px-12 py-6 rounded-2xl transition-all btn-danger"><span className="relative z-10">Finish</span></button>
                   <button onClick={() => action({ action: 'stop_session' })} className="text-neutral-500 hover:text-white transition-colors text-sm font-medium uppercase tracking-widest">Cancel</button>
                 </>

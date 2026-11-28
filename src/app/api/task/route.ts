@@ -29,6 +29,7 @@ async function getAppState(userId: string, supabase: SupabaseClient) {
       endTime: settings.session_end_time ? Number(settings.session_end_time) : null,
       focusMs: Number(settings.session_focus_ms ?? 0),
       startedAt: settings.session_started_at ? Number(settings.session_started_at) : null,
+      pausedAt: settings.session_paused_at ? Number(settings.session_paused_at) : null,
     };
   }
 
@@ -81,6 +82,7 @@ export async function POST(req: Request) {
         session_end_time: endTime,
         session_focus_ms: 0,
         session_started_at: now,
+        session_paused_at: null,
       });
       if (endTime) await schedulePhaseEnd(userId, 'work', endTime, appUrl);
     }
@@ -94,7 +96,7 @@ export async function POST(req: Request) {
     // The phone notification was already scheduled when the phase started.
     const settings = await loadSettings();
     const end = settings?.session_end_time ? Number(settings.session_end_time) : null;
-    if (settings?.is_active && end && Date.now() >= end - 500) {
+    if (settings?.is_active && end && !settings.session_paused_at && Date.now() >= end - 500) {
       const mode = settings.session_mode as SessionMode;
       const finishedWork = settings.session_phase === 'work';
       await updateSettingsIf(supabase, userId, {
@@ -112,6 +114,30 @@ export async function POST(req: Request) {
       const changed = await updateSettingsIf(supabase, userId, { session_end_time: endTime }, { session_end_time: null, session_phase: phase });
       if (changed) await schedulePhaseEnd(userId, phase, endTime, appUrl);
     }
+  } else if (action === 'pause_session') {
+    // Freeze the clock. Only a running phase (or an open-ended session) can be paused,
+    // not one that is waiting for Start. The pending phone alert is cancelled.
+    const settings = await loadSettings();
+    const timed = isTimedMode(settings?.session_mode);
+    if (settings?.is_active && !settings.session_paused_at && (!timed || settings.session_end_time)) {
+      const changed = await updateSettingsIf(supabase, userId, { session_paused_at: Date.now() }, { session_paused_at: null });
+      if (changed) await cancelPhaseEnd(userId, settings.session_end_time);
+    }
+  } else if (action === 'resume_session') {
+    // Shift the end time / start time forward by the time spent paused, then re-arm the alert.
+    const settings = await loadSettings();
+    const pausedAt = settings?.session_paused_at ? Number(settings.session_paused_at) : null;
+    if (settings?.is_active && pausedAt) {
+      const shift = Math.max(0, Date.now() - pausedAt);
+      const end = settings.session_end_time ? Number(settings.session_end_time) + shift : null;
+      const started = settings.session_started_at ? Number(settings.session_started_at) + shift : null;
+      const changed = await updateSettingsIf(supabase, userId, {
+        session_paused_at: null,
+        session_end_time: end,
+        ...(started ? { session_started_at: started } : {}),
+      }, { session_paused_at: pausedAt });
+      if (changed && end) await schedulePhaseEnd(userId, settings.session_phase as SessionPhase, end, appUrl);
+    }
   } else if (action === 'skip_break') {
     // End the break (running or waiting) and start the next focus block right away.
     const settings = await loadSettings();
@@ -119,7 +145,7 @@ export async function POST(req: Request) {
       const endTime = Date.now() + phaseDuration(settings.session_mode as SessionMode, 'work');
       const changed = await updateSettingsIf(
         supabase, userId,
-        { session_phase: 'work', session_end_time: endTime },
+        { session_phase: 'work', session_end_time: endTime, session_paused_at: null },
         { session_phase: 'break', session_end_time: settings.session_end_time ?? null },
       );
       if (changed) {

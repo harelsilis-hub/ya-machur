@@ -6,6 +6,9 @@
 //                     waiting for the user to press Start (phases never auto-start).
 //   session_focus_ms  focus time banked from completed work phases.
 //   session_started_at  when the session began (used by open-ended tamagotchi sessions).
+//   session_paused_at   ms timestamp of the pause, NULL when not paused. While paused,
+//                       end_time / started_at stay as they were; on resume both are shifted
+//                       forward by the paused duration.
 // Every device derives its display from that row, so all devices stay in sync.
 
 export type SessionMode = 'infinite' | 'pomodoro' | 'tamagotchi' | 'tamagotchi_pomodoro';
@@ -29,11 +32,16 @@ export const isTimedMode = (mode: string | null | undefined): boolean =>
 export const phaseDuration = (mode: SessionMode, phase: SessionPhase): number =>
   (phase === 'work' ? WORK_MS[mode] : BREAK_MS[mode]) ?? 0;
 
+/** While paused the clock is frozen at the moment of the pause. */
+export const effectiveNow = (s: { pausedAt?: number | null }, now: number): number =>
+  s.pausedAt ? Math.min(now, s.pausedAt) : now;
+
 /** Total focused milliseconds of a session at time `now` (breaks and waiting don't count). */
 export function focusMsAt(
-  s: { mode: SessionMode; phase: SessionPhase; endTime: number | null; focusMs?: number; startedAt?: number | null },
+  s: { mode: SessionMode; phase: SessionPhase; endTime: number | null; focusMs?: number; startedAt?: number | null; pausedAt?: number | null },
   now: number,
 ): number {
+  now = effectiveNow(s, now);
   let ms = s.focusMs ?? 0;
   if (s.phase !== 'work') return ms;
   if (s.endTime) {
